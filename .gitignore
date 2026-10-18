@@ -1,0 +1,36 @@
+﻿# Python virtual environments
+/backend/venv/
+/backend/.venv/
+**/venv/
+**/.venv/
+
+# Environment files and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Local databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Private keys and backups
+*.pem
+*.key
+*.backup
+*.bak
