@@ -44,6 +44,23 @@ function cleanTextForSpeech(input: string): string {
     .trim();
 }
 
+
+function NexusMark({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <path d="M5 5h14v14H5z" />
+      <path d="M9 9h6v6H9z" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
 
@@ -723,7 +740,7 @@ export default function DashboardPage() {
       >
         <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-black">N</div>
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e4e5da] text-[#151612]"><NexusMark className="h-4 w-4" /></div>
             <div>
               <p className="font-semibold tracking-tight">Nexus AI</p>
               <p className="text-xs text-zinc-500">Intelligent workspace</p>
@@ -754,8 +771,8 @@ export default function DashboardPage() {
             onClick={startNewConversation}
             className="flex items-center gap-3 text-left"
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-black">
-              N
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e4e5da] text-[#151612]">
+              <NexusMark className="h-4 w-4" />
             </div>
 
             <div>
@@ -867,15 +884,15 @@ export default function DashboardPage() {
         <div className="flex-1 overflow-y-auto">
           {messages.length === 0 ? (
             <div className="mx-auto flex min-h-full max-w-4xl flex-col items-center justify-center px-4 py-8 text-center sm:px-6 sm:py-12">
-              <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl sm:mb-8 sm:h-16 sm:w-16 border border-white/10 bg-white/[0.03] text-2xl font-semibold">
-                N
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-[#191a17] text-[#b8c9a8] sm:mb-6 sm:h-14 sm:w-14">
+                <NexusMark className="h-5 w-5 sm:h-6 sm:w-6" />
               </div>
 
               <p className="mb-3 text-sm uppercase tracking-[0.22em] text-zinc-600">
                 Nexus AI
               </p>
 
-              <h2 className="max-w-2xl text-3xl font-semibold tracking-[-0.04em] sm:text-4xl md:text-5xl">
+              <h2 className="max-w-2xl text-2xl font-medium tracking-[-0.04em] sm:text-3xl md:text-4xl">
                 What can I help you
                 accomplish?
               </h2>
@@ -981,8 +998,8 @@ export default function DashboardPage() {
                     {message.role ===
                       "assistant" && (
                       <div className="mb-3 flex items-center gap-2">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-xs font-semibold">
-                          N
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-[#191a17] text-[#b8c9a8]">
+                          <NexusMark className="h-3.5 w-3.5" />
                         </div>
 
                         <span className="text-xs font-medium text-zinc-500">
@@ -1001,8 +1018,8 @@ export default function DashboardPage() {
               {loading && (
                 <div className="mb-8 flex justify-start">
                   <div className="flex items-center gap-3 text-sm text-zinc-500">
-                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-xs font-semibold">
-                      N
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-[#191a17] text-[#b8c9a8]">
+                      <NexusMark className="h-3.5 w-3.5" />
                     </div>
 
                     Nexus AI is
