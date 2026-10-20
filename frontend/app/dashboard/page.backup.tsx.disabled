@@ -1,0 +1,970 @@
+"use client";
+
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+
+import SpeechRecognition, {
+  useSpeechRecognition,
+} from "react-speech-recognition";
+
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+type Message = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+};
+
+export default function DashboardPage() {
+  const router = useRouter();
+
+  const {
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition,
+  } = useSpeechRecognition();
+
+  const [userEmail, setUserEmail] = useState("");
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  const [voiceAssistantEnabled, setVoiceAssistantEnabled] =
+    useState(false);
+
+  const [wakeActive, setWakeActive] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const voiceEnabledRef = useRef(false);
+  const loadingRef = useRef(false);
+  const speakingRef = useRef(false);
+
+  const autoSendTimerRef =
+    useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const pendingVoiceCommandRef = useRef("");
+
+  /*
+   * Keep refs synchronized with state.
+   */
+  useEffect(() => {
+    voiceEnabledRef.current = voiceAssistantEnabled;
+  }, [voiceAssistantEnabled]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    speakingRef.current = isSpeaking;
+  }, [isSpeaking]);
+
+  /*
+   * Check Supabase session.
+   */
+  useEffect(() => {
+    const checkUser = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+
+      setUserEmail(session.user.email ?? "");
+      setCheckingSession(false);
+    };
+
+    checkUser();
+  }, [router]);
+
+  /*
+   * Auto-scroll chat.
+   */
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: "smooth",
+    });
+  }, [messages, loading]);
+
+  /*
+   * Start continuous microphone listening.
+   */
+  const startContinuousListening = useCallback(async () => {
+    if (!browserSupportsSpeechRecognition) {
+      return;
+    }
+
+    if (!voiceEnabledRef.current) {
+      return;
+    }
+
+    if (loadingRef.current || speakingRef.current) {
+      return;
+    }
+
+    try {
+      await SpeechRecognition.startListening({
+        continuous: true,
+        language: "en-US",
+      });
+    } catch (error) {
+      console.error("Speech recognition start error:", error);
+    }
+  }, [browserSupportsSpeechRecognition]);
+
+  /*
+   * Speak Nexus response.
+   */
+  const speakResponse = useCallback(
+    (text: string) => {
+      if (!("speechSynthesis" in window)) {
+        return;
+      }
+
+      SpeechRecognition.stopListening();
+
+      speakingRef.current = true;
+      setIsSpeaking(true);
+
+      window.speechSynthesis.cancel();
+
+      const speech = new SpeechSynthesisUtterance(text);
+
+      const voices = window.speechSynthesis.getVoices();
+
+      const preferredVoice =
+        voices.find((voice) =>
+          voice.name.includes("Microsoft George")
+        ) ||
+        voices.find((voice) =>
+          voice.name.includes("Google UK English Male")
+        ) ||
+        voices.find((voice) =>
+          voice.name.includes("Google US English")
+        );
+
+      if (preferredVoice) {
+        speech.voice = preferredVoice;
+      }
+
+      speech.rate = 0.95;
+      speech.pitch = 0.7;
+      speech.volume = 1;
+
+      const finishSpeaking = () => {
+        speakingRef.current = false;
+        setIsSpeaking(false);
+
+        resetTranscript();
+        setWakeActive(false);
+
+        if (voiceEnabledRef.current) {
+          setTimeout(() => {
+            startContinuousListening();
+          }, 250);
+        }
+      };
+
+      speech.onend = finishSpeaking;
+      speech.onerror = finishSpeaking;
+
+      setTimeout(() => {
+        window.speechSynthesis.speak(speech);
+      }, 80);
+    },
+    [resetTranscript, startContinuousListening]
+  );
+
+  /*
+   * Send a message to FastAPI.
+   *
+   * voiceRequest tells Nexus whether it should speak
+   * the response aloud.
+   */
+  const sendText = useCallback(
+    async (
+      text: string,
+      voiceRequest = false
+    ) => {
+      const cleanedInput = text.trim();
+
+      if (!cleanedInput || loadingRef.current) {
+        return;
+      }
+
+      if (autoSendTimerRef.current) {
+        clearTimeout(autoSendTimerRef.current);
+        autoSendTimerRef.current = null;
+      }
+
+      pendingVoiceCommandRef.current = "";
+
+      SpeechRecognition.stopListening();
+
+      resetTranscript();
+      setWakeActive(false);
+
+      const userMessage: Message = {
+        id: crypto.randomUUID(),
+        role: "user",
+        content: cleanedInput,
+      };
+
+      setMessages((current) => [
+        ...current,
+        userMessage,
+      ]);
+
+      setInput("");
+
+      loadingRef.current = true;
+      setLoading(true);
+
+      try {
+        const response = await fetch(
+          "http://127.0.0.1:8000/chat",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              message: cleanedInput,
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            "The Nexus AI backend returned an error."
+          );
+        }
+
+        const data = await response.json();
+
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            data.reply ||
+            "I could not generate a response.",
+        };
+
+        setMessages((current) => [
+          ...current,
+          assistantMessage,
+        ]);
+
+        loadingRef.current = false;
+        setLoading(false);
+
+        if (
+          voiceRequest &&
+          voiceEnabledRef.current
+        ) {
+          speakResponse(
+            assistantMessage.content
+          );
+        } else if (
+          voiceEnabledRef.current
+        ) {
+          setTimeout(() => {
+            startContinuousListening();
+          }, 250);
+        }
+      } catch (error) {
+        console.error(error);
+
+        const errorMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content:
+            "I could not connect to the Nexus AI backend. Make sure the Python server is running.",
+        };
+
+        setMessages((current) => [
+          ...current,
+          errorMessage,
+        ]);
+
+        loadingRef.current = false;
+        setLoading(false);
+
+        if (voiceEnabledRef.current) {
+          setTimeout(() => {
+            startContinuousListening();
+          }, 300);
+        }
+      }
+    },
+    [
+      resetTranscript,
+      speakResponse,
+      startContinuousListening,
+    ]
+  );
+
+  /*
+   * Normal typed-message form submission.
+   */
+  const sendMessage = async (
+    event: FormEvent<HTMLFormElement>
+  ) => {
+    event.preventDefault();
+
+    await sendText(input, false);
+  };
+
+  /*
+   * Schedule voice command after user stops speaking.
+   */
+  const scheduleVoiceSend = useCallback(
+    (command: string) => {
+      const cleanedCommand = command.trim();
+
+      if (!cleanedCommand) {
+        return;
+      }
+
+      pendingVoiceCommandRef.current =
+        cleanedCommand;
+
+      setInput(cleanedCommand);
+
+      if (autoSendTimerRef.current) {
+        clearTimeout(
+          autoSendTimerRef.current
+        );
+      }
+
+      autoSendTimerRef.current =
+        setTimeout(() => {
+          const commandToSend =
+            pendingVoiceCommandRef.current.trim();
+
+          if (
+            commandToSend &&
+            voiceEnabledRef.current &&
+            !loadingRef.current &&
+            !speakingRef.current
+          ) {
+            sendText(
+              commandToSend,
+              true
+            );
+          }
+        }, 900);
+    },
+    [sendText]
+  );
+
+  /*
+   * Wake-word detection.
+   *
+   * Flow:
+   *   "Hey Nexus" -> wake
+   *   command -> auto-send
+   */
+  useEffect(() => {
+    if (!voiceAssistantEnabled) {
+      return;
+    }
+
+    if (
+      loading ||
+      isSpeaking ||
+      !transcript.trim()
+    ) {
+      return;
+    }
+
+    const spokenText = transcript.trim();
+
+    const lowerText =
+      spokenText.toLowerCase();
+
+    const wakeWord = "hey nexus";
+
+    if (!wakeActive) {
+      const wakeIndex =
+        lowerText.lastIndexOf(wakeWord);
+
+      if (wakeIndex === -1) {
+        return;
+      }
+
+      const commandAfterWakeWord =
+        spokenText
+          .slice(
+            wakeIndex +
+              wakeWord.length
+          )
+          .replace(
+            /^[\s,.:;!?-]+/,
+            ""
+          )
+          .trim();
+
+      setWakeActive(true);
+
+      resetTranscript();
+
+      if (commandAfterWakeWord) {
+        scheduleVoiceSend(
+          commandAfterWakeWord
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * Already activated by "Hey Nexus".
+     * Everything spoken now becomes the command.
+     */
+    scheduleVoiceSend(spokenText);
+  }, [
+    transcript,
+    voiceAssistantEnabled,
+    wakeActive,
+    loading,
+    isSpeaking,
+    resetTranscript,
+    scheduleVoiceSend,
+  ]);
+
+  /*
+   * Recover continuous listening if Chrome stops
+   * recognition because of inactivity.
+   */
+  useEffect(() => {
+    if (
+      !voiceAssistantEnabled ||
+      listening ||
+      loading ||
+      isSpeaking
+    ) {
+      return;
+    }
+
+    const restartTimer = setTimeout(() => {
+      startContinuousListening();
+    }, 700);
+
+    return () =>
+      clearTimeout(restartTimer);
+  }, [
+    voiceAssistantEnabled,
+    listening,
+    loading,
+    isSpeaking,
+    startContinuousListening,
+  ]);
+
+  /*
+   * Toggle voice assistant.
+   *
+   * No voice announcement.
+   */
+  const toggleVoiceAssistant =
+    async () => {
+      if (
+        !browserSupportsSpeechRecognition
+      ) {
+        alert(
+          "Voice recognition is not supported in this browser. Please use Google Chrome."
+        );
+        return;
+      }
+
+      const nextState =
+        !voiceEnabledRef.current;
+
+      voiceEnabledRef.current =
+        nextState;
+
+      setVoiceAssistantEnabled(
+        nextState
+      );
+
+      setWakeActive(false);
+      resetTranscript();
+      setInput("");
+
+      if (autoSendTimerRef.current) {
+        clearTimeout(
+          autoSendTimerRef.current
+        );
+
+        autoSendTimerRef.current = null;
+      }
+
+      if (nextState) {
+        /*
+         * Browser requires this initial click
+         * to grant microphone access.
+         *
+         * After this, "Hey Nexus" is automatic
+         * during the session.
+         */
+        await SpeechRecognition.startListening({
+          continuous: true,
+          language: "en-US",
+        });
+      } else {
+        SpeechRecognition.stopListening();
+
+        window.speechSynthesis?.cancel();
+
+        speakingRef.current = false;
+        setIsSpeaking(false);
+      }
+    };
+
+  const handleLogout = async () => {
+    SpeechRecognition.stopListening();
+
+    window.speechSynthesis?.cancel();
+
+    await supabase.auth.signOut();
+
+    router.push("/login");
+  };
+
+  const startNewConversation = () => {
+    setMessages([]);
+    setInput("");
+
+    resetTranscript();
+
+    setWakeActive(false);
+  };
+
+  if (checkingSession) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#090909] text-white">
+        <p className="text-sm text-zinc-500">
+          Loading Nexus AI...
+        </p>
+      </main>
+    );
+  }
+
+  const voiceStatus = (() => {
+    if (!voiceAssistantEnabled) {
+      return "Voice assistant off";
+    }
+
+    if (isSpeaking) {
+      return "Speaking";
+    }
+
+    if (loading) {
+      return "Thinking";
+    }
+
+    if (
+      listening &&
+      wakeActive
+    ) {
+      return "Listening to command";
+    }
+
+    if (listening) {
+      return 'Waiting for "Hey Nexus"';
+    }
+
+    return "Starting microphone";
+  })();
+
+  return (
+    <main className="flex h-screen overflow-hidden bg-[#090909] text-white">
+      {/* SIDEBAR */}
+      <aside className="hidden w-[280px] shrink-0 border-r border-white/10 bg-[#0d0d0d] md:flex md:flex-col">
+        <div className="border-b border-white/10 px-6 py-6">
+          <button
+            onClick={startNewConversation}
+            className="flex items-center gap-3 text-left"
+          >
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-bold text-black">
+              N
+            </div>
+
+            <div>
+              <p className="font-semibold tracking-tight">
+                Nexus AI
+              </p>
+
+              <p className="text-xs text-zinc-500">
+                Intelligent workspace
+              </p>
+            </div>
+          </button>
+        </div>
+
+        <div className="flex-1 px-4 py-5">
+          <button
+            onClick={startNewConversation}
+            className="flex w-full items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-sm text-zinc-300 transition hover:bg-white/5"
+          >
+            <span className="text-lg">
+              +
+            </span>
+
+            New conversation
+          </button>
+
+          <div className="mt-8">
+            <p className="px-3 text-xs font-medium uppercase tracking-[0.18em] text-zinc-600">
+              Workspace
+            </p>
+
+            <div className="mt-3 space-y-1">
+              <button className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-300">
+                AI Assistant
+              </button>
+
+              <button className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300">
+                Documents
+              </button>
+
+              <button className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300">
+                Automations
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-white/10 p-4">
+          <div className="mb-3 px-3">
+            <p className="truncate text-sm text-zinc-300">
+              {userEmail}
+            </p>
+
+            <p className="mt-1 text-xs text-zinc-600">
+              Nexus AI account
+            </p>
+          </div>
+
+          <button
+            onClick={handleLogout}
+            className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 transition hover:bg-white/5 hover:text-white"
+          >
+            Sign out
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN */}
+      <section className="flex min-w-0 flex-1 flex-col">
+        {/* HEADER */}
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-5 md:px-8">
+          <div>
+            <h1 className="text-sm font-medium">
+              Nexus Assistant
+            </h1>
+
+            <p className="text-xs text-zinc-600">
+              Powered by Nexus AI
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div
+              className={`h-2 w-2 rounded-full ${
+                voiceAssistantEnabled
+                  ? "bg-emerald-400"
+                  : "bg-zinc-600"
+              }`}
+            />
+
+            <span className="text-xs text-zinc-500">
+              {voiceStatus}
+            </span>
+          </div>
+        </header>
+
+        {/* CHAT */}
+        <div className="flex-1 overflow-y-auto">
+          {messages.length === 0 ? (
+            <div className="mx-auto flex min-h-full max-w-4xl flex-col items-center justify-center px-6 py-16 text-center">
+              <div className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-2xl font-semibold">
+                N
+              </div>
+
+              <p className="mb-3 text-sm uppercase tracking-[0.22em] text-zinc-600">
+                Nexus AI
+              </p>
+
+              <h2 className="max-w-2xl text-4xl font-semibold tracking-[-0.04em] md:text-5xl">
+                What can I help you
+                accomplish?
+              </h2>
+
+              <p className="mt-5 max-w-xl leading-7 text-zinc-500">
+                Type normally or enable
+                the voice assistant and
+                say &quot;Hey Nexus&quot;.
+              </p>
+
+              <div className="mt-10 grid w-full max-w-2xl gap-3 md:grid-cols-2">
+                <button
+                  onClick={() =>
+                    setInput(
+                      "Explain artificial intelligence in simple terms."
+                    )
+                  }
+                  className="rounded-2xl border border-white/10 p-4 text-left transition hover:bg-white/[0.04]"
+                >
+                  <p className="text-sm font-medium">
+                    Explain a concept
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Learn something in
+                    simple terms
+                  </p>
+                </button>
+
+                <button
+                  onClick={() =>
+                    setInput(
+                      "Help me organize my research project."
+                    )
+                  }
+                  className="rounded-2xl border border-white/10 p-4 text-left transition hover:bg-white/[0.04]"
+                >
+                  <p className="text-sm font-medium">
+                    Research assistance
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Structure ideas and
+                    information
+                  </p>
+                </button>
+
+                <button
+                  onClick={() =>
+                    setInput(
+                      "Write a professional project summary."
+                    )
+                  }
+                  className="rounded-2xl border border-white/10 p-4 text-left transition hover:bg-white/[0.04]"
+                >
+                  <p className="text-sm font-medium">
+                    Create content
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Draft and improve your
+                    writing
+                  </p>
+                </button>
+
+                <button
+                  onClick={() =>
+                    setInput(
+                      "What kinds of tasks can an AI automation assistant perform?"
+                    )
+                  }
+                  className="rounded-2xl border border-white/10 p-4 text-left transition hover:bg-white/[0.04]"
+                >
+                  <p className="text-sm font-medium">
+                    Explore automation
+                  </p>
+
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Discover possible
+                    computer tasks
+                  </p>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto w-full max-w-4xl px-5 py-8 md:px-8">
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`mb-8 flex ${
+                    message.role === "user"
+                      ? "justify-end"
+                      : "justify-start"
+                  }`}
+                >
+                  <div
+                    className={
+                      message.role === "user"
+                        ? "max-w-[85%] rounded-3xl bg-white px-5 py-4 text-sm leading-7 text-black md:max-w-[70%]"
+                        : "max-w-[90%] text-sm leading-7 text-zinc-200 md:max-w-[80%]"
+                    }
+                  >
+                    {message.role ===
+                      "assistant" && (
+                      <div className="mb-3 flex items-center gap-2">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-xs font-semibold">
+                          N
+                        </div>
+
+                        <span className="text-xs font-medium text-zinc-500">
+                          Nexus AI
+                        </span>
+                      </div>
+                    )}
+
+                    <p className="whitespace-pre-wrap">
+                      {message.content}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+              {loading && (
+                <div className="mb-8 flex justify-start">
+                  <div className="flex items-center gap-3 text-sm text-zinc-500">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-xs font-semibold">
+                      N
+                    </div>
+
+                    Nexus AI is
+                    thinking...
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+
+        {/* INPUT */}
+        <div className="shrink-0 px-4 pb-5 md:px-8 md:pb-7">
+          <form
+            onSubmit={sendMessage}
+            className="mx-auto max-w-4xl"
+          >
+            {voiceAssistantEnabled && (
+              <div className="mb-3 flex items-center justify-center gap-2">
+                <div
+                  className={`h-2 w-2 rounded-full ${
+                    isSpeaking
+                      ? "bg-blue-400"
+                      : wakeActive
+                        ? "animate-pulse bg-red-500"
+                        : listening
+                          ? "animate-pulse bg-emerald-400"
+                          : "bg-zinc-600"
+                  }`}
+                />
+
+                <p className="text-xs text-zinc-500">
+                  {voiceStatus}
+                </p>
+              </div>
+            )}
+
+            <div className="rounded-[24px] border border-white/10 bg-[#151515] p-2 shadow-2xl shadow-black/30">
+              <textarea
+                value={input}
+                onChange={(event) =>
+                  setInput(
+                    event.target.value
+                  )
+                }
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Enter" &&
+                    !event.shiftKey
+                  ) {
+                    event.preventDefault();
+
+                    event.currentTarget.form?.requestSubmit();
+                  }
+                }}
+                rows={1}
+                placeholder={
+                  wakeActive
+                    ? "Listening..."
+                    : "Ask Nexus AI anything..."
+                }
+                className="max-h-40 min-h-[56px] w-full resize-none bg-transparent px-4 py-4 text-sm text-white outline-none placeholder:text-zinc-600"
+              />
+
+              <div className="flex items-center justify-between px-2 pb-1">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-xl px-3 py-2 text-xs text-zinc-500 transition hover:bg-white/5 hover:text-white"
+                  >
+                    + File
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={
+                      toggleVoiceAssistant
+                    }
+                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium transition ${
+                      voiceAssistantEnabled
+                        ? "bg-emerald-500/15 text-emerald-300"
+                        : "text-zinc-500 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    <span>
+                      {voiceAssistantEnabled
+                        ? "🎙️"
+                        : "🎤"}
+                    </span>
+
+                    <span>
+                      Voice Assistant
+                    </span>
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={
+                    !input.trim() ||
+                    loading
+                  }
+                  className="rounded-xl bg-white px-5 py-2.5 text-sm font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  {loading
+                    ? "Thinking"
+                    : "Send"}
+                </button>
+              </div>
+            </div>
+
+            {!browserSupportsSpeechRecognition && (
+              <p className="mt-3 text-center text-xs text-amber-500">
+                Voice recognition is not
+                supported by this browser.
+                Please use Google Chrome.
+              </p>
+            )}
+
+            <p className="mt-3 text-center text-[11px] text-zinc-700">
+              Nexus AI can make mistakes.
+              Verify important information.
+            </p>
+          </form>
+        </div>
+      </section>
+    </main>
+  );
+}

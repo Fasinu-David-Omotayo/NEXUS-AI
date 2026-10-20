@@ -1,164 +1,327 @@
+
+import Link from "next/link";
+
+const features = [
+  {
+    number: "01",
+    icon: "message-square",
+    title: "AI conversations",
+    description:
+      "Think through ideas, ask questions, and get useful answers with your AI assistant.",
+  },
+  {
+    number: "02",
+    icon: "files",
+    title: "Research and documents",
+    description:
+      "Build a more organized research workflow and make complex information easier to understand.",
+  },
+  {
+    number: "03",
+    icon: "workflow",
+    title: "Intelligent automation",
+    description:
+      "Bring repetitive tasks and connected workflows into a more streamlined workspace.",
+  },
+  {
+    number: "04",
+    icon: "monitor",
+    title: "Desktop assistance",
+    description:
+      "Connect your local desktop agent to supported computer tasks while keeping local controls on your device.",
+  },
+];
+
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-black text-white">
-      {/* NAVBAR */}
-      <nav className="border-b border-zinc-800">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5">
-          <h1 className="text-xl font-bold tracking-wide">
-            Nexus AI
-          </h1>
+    <main className="min-h-screen overflow-hidden bg-[#101110] text-[#f1f1eb]">
+      {/* Navigation */}
+      <header className="border-b border-white/[0.08]">
+        <nav className="mx-auto flex h-[68px] max-w-7xl items-center justify-between px-5 sm:px-8 lg:px-12">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#e4e5da] text-[#151612]">
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M5 5h14v14H5z" />
+                <path d="M9 9h6v6H9z" />
+              </svg>
+            </span>
+            <span className="text-[17px] font-semibold tracking-[-0.6px]">
+              nexus<span className="text-[#b8c9a8]">ai</span>
+            </span>
+          </Link>
 
-          <div className="hidden gap-8 md:flex">
-            <a href="#" className="text-zinc-400 hover:text-white">
-              Features
-            </a>
-
-            <a href="#" className="text-zinc-400 hover:text-white">
+          <div className="hidden items-center gap-7 md:flex">
+            <a
+              href="#platform"
+              className="text-[13px] text-[#a3a59c] transition hover:text-white"
+            >
               Platform
             </a>
-
-            <a href="#" className="text-zinc-400 hover:text-white">
-              Research
+            <a
+              href="#features"
+              className="text-[13px] text-[#a3a59c] transition hover:text-white"
+            >
+              Features
+            </a>
+            <a
+              href="#about"
+              className="text-[13px] text-[#a3a59c] transition hover:text-white"
+            >
+              About
             </a>
           </div>
 
-          <button className="rounded-xl bg-white px-4 py-2 text-black font-medium">
-            Sign In
-          </button>
-        </div>
-      </nav>
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3.5 py-2 text-[13px] font-medium transition hover:border-white/30 hover:bg-white/[0.05]"
+          >
+            Sign in
+            <span aria-hidden="true">↗</span>
+          </Link>
+        </nav>
+      </header>
 
-      {/* HERO */}
-      <section className="flex min-h-[80vh] items-center justify-center px-6">
-        <div className="max-w-5xl text-center">
-          <p className="mb-6 text-sm uppercase tracking-[0.4em] text-zinc-500">
-            Intelligent Automation Platform
-          </p>
+      {/* Hero */}
+      <section id="platform" className="relative">
+        <div className="pointer-events-none absolute left-1/2 top-10 h-72 w-72 -translate-x-1/2 rounded-full bg-[#a6bb91]/[0.07] blur-[100px]" />
 
-          <h1 className="mb-8 text-6xl font-bold leading-tight md:text-8xl">
-            AI That Works
-            <br />
-            Beyond Conversation
-          </h1>
+        <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-20 sm:px-8 sm:pb-20 sm:pt-28 lg:px-12 lg:pt-32">
+          <div className="mx-auto max-w-3xl text-center">
+           
 
-          <p className="mx-auto mb-10 max-w-3xl text-lg text-zinc-400 md:text-xl">
-            Chat with AI, analyze documents, automate workflows,
-            and control your digital environment through one
-            intelligent platform.
-          </p>
+            <h1 className="text-[38px] font-medium leading-[1.12] tracking-[-1.8px] sm:text-[52px] sm:tracking-[-2.6px] lg:text-[64px] lg:tracking-[-3.2px]">
+              Less busywork.
+              <br />
+              <span className="text-[#b8c9a8]">More possibilities.</span>
+            </h1>
 
-          <div className="flex flex-wrap justify-center gap-4">
-            <button className="rounded-2xl bg-white px-8 py-4 font-medium text-black">
-              Launch Assistant
-            </button>
+            <p className="mx-auto mt-6 max-w-xl text-[14px] leading-7 text-[#a5a69e] sm:text-[15px]">
+              One intelligent workspace for AI conversations, research, and
+              smarter workflows. Spend less time switching tools and more time
+              making progress.
+            </p>
 
-            <button className="rounded-2xl border border-zinc-700 px-8 py-4">
-              Watch Demo
-            </button>
-          </div>
-        </div>
-      </section>
+            <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <Link
+                href="/login"
+                className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-[#e4e5da] px-5 text-[13px] font-semibold text-[#171813] transition hover:bg-white sm:w-auto"
+              >
+                Get started
+                <span aria-hidden="true">↗</span>
+              </Link>
 
-      {/* STATS */}
-      <section className="border-t border-zinc-900 py-20">
-        <div className="mx-auto grid max-w-6xl gap-8 px-6 md:grid-cols-3">
-          <div className="rounded-3xl border border-zinc-800 p-8">
-            <h2 className="mb-2 text-4xl font-bold">100+</h2>
-            <p className="text-zinc-400">
-              Intelligent Operations
+              <a
+                href="#features"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-white/[0.13] px-5 text-[13px] font-medium text-[#e4e5da] transition hover:border-white/25 hover:bg-white/[0.04] sm:w-auto"
+              >
+                Explore the platform
+              </a>
+            </div>
+
+            <p className="mt-5 text-[11px] text-[#777970]">
+              A focused workspace for the way you work.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-zinc-800 p-8">
-            <h2 className="mb-2 text-4xl font-bold">24/7</h2>
-            <p className="text-zinc-400">
-              AI Availability
-            </p>
-          </div>
+          {/* Product preview */}
+          <div className="mx-auto mt-16 max-w-4xl sm:mt-20">
+            <div className="overflow-hidden rounded-xl border border-white/[0.12] bg-[#151613] shadow-2xl shadow-black/20">
+              <div className="flex h-11 items-center justify-between border-b border-white/[0.08] px-4 sm:px-5">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-[#777a6e]" />
+                  <span className="h-2 w-2 rounded-full bg-[#777a6e]" />
+                  <span className="h-2 w-2 rounded-full bg-[#777a6e]" />
+                </div>
+                <span className="text-[10px] tracking-wide text-[#777970]">
+                  NEXUS AI WORKSPACE
+                </span>
+                <div className="h-5 w-5" />
+              </div>
 
-          <div className="rounded-3xl border border-zinc-800 p-8">
-            <h2 className="mb-2 text-4xl font-bold">1</h2>
-            <p className="text-zinc-400">
-              Unified Platform
-            </p>
+              <div className="grid min-h-[260px] sm:grid-cols-[190px_1fr]">
+                <aside className="hidden border-r border-white/[0.08] p-4 sm:block">
+                  <div className="mb-6 flex items-center gap-2 text-[12px] font-medium text-[#e4e5da]">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.07]">
+                      <svg
+                        width="13"
+                        height="13"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        aria-hidden="true"
+                      >
+                        <path d="M12 3v18M3 12h18" />
+                      </svg>
+                    </span>
+                    Workspace
+                  </div>
+
+                  <p className="mb-3 text-[9px] font-medium uppercase tracking-[0.15em] text-[#777970]">
+                    YOUR TOOLS
+                  </p>
+
+                  {[
+                    "AI Assistant",
+                    "Research",
+                    "Documents",
+                    "Automations",
+                  ].map((item, index) => (
+                    <div
+                      key={item}
+                      className={`mb-1 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[11px] ${
+                        index === 0
+                          ? "bg-white/[0.07] text-[#f1f1eb]"
+                          : "text-[#909188]"
+                      }`}
+                    >
+                      <span className="text-[12px] text-[#b8c9a8]">
+                        {["✳", "⌕", "▤", "⌘"][index]}
+                      </span>
+                      {item}
+                    </div>
+                  ))}
+                </aside>
+
+                <div className="flex flex-col justify-between p-5 sm:p-7">
+                  <div>
+                    <p className="text-[10px] text-[#8c8e83]">
+                      YOUR WORKSPACE / AI ASSISTANT
+                    </p>
+                    <h2 className="mt-3 text-[20px] font-medium tracking-[-0.5px] text-[#f1f1eb] sm:text-[23px]">
+                      What are we working on?
+                    </h2>
+                    <p className="mt-2 max-w-md text-[12px] leading-6 text-[#92948a]">
+                      Explore an idea, work through a problem, or start
+                      something new. Your assistant is ready when you are.
+                    </p>
+                  </div>
+
+                  <div className="mt-8 rounded-lg border border-white/[0.11] bg-[#1b1c18] p-3.5">
+                    <p className="text-[11px] text-[#777970]">
+                      Ask Nexus anything...
+                    </p>
+                    <div className="mt-4 flex items-center justify-between">
+                      <div className="flex gap-2">
+                        <span className="rounded-md border border-white/[0.09] px-2 py-1 text-[9px] text-[#92948a]">
+                          Research
+                        </span>
+                        <span className="rounded-md border border-white/[0.09] px-2 py-1 text-[9px] text-[#92948a]">
+                          Ideas
+                        </span>
+                      </div>
+                      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#e4e5da] text-sm text-[#171813]">
+                        ↑
+                      </span>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-center text-[9px] text-[#686a61]">
+                    Interface preview · Sign in to access your workspace
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* FEATURES */}
-      <section className="py-24">
-        <div className="mx-auto max-w-6xl px-6">
-          <h2 className="mb-16 text-center text-5xl font-bold">
-            Core Features
-          </h2>
+      {/* Features */}
+      <section
+        id="features"
+        className="border-t border-white/[0.08] bg-[#131411] py-16 sm:py-20"
+      >
+        <div className="mx-auto max-w-7xl px-5 sm:px-8 lg:px-12">
+          <div className="mb-9 max-w-xl">
+            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#b8c9a8]">
+              BUILT FOR YOUR WORKFLOW
+            </p>
+            <h2 className="mt-3 text-[26px] font-medium tracking-[-0.9px] sm:text-[32px]">
+              Everything in one place.
+            </h2>
+            <p className="mt-3 text-[13px] leading-6 text-[#a0a197]">
+              The tools you need, brought together in one considered
+              workspace.
+            </p>
+          </div>
 
-          <div className="grid gap-8 md:grid-cols-2">
-            <div className="rounded-3xl border border-zinc-800 p-8">
-              <h3 className="mb-4 text-2xl font-semibold">
-                AI Conversations
-              </h3>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {features.map((feature) => (
+              <article
+                key={feature.number}
+                className="rounded-xl border border-white/[0.09] bg-white/[0.018] p-5 transition hover:border-white/[0.17] hover:bg-white/[0.035] sm:p-6"
+              >
+                <div className="flex items-start justify-between">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/[0.10] text-[#b8c9a8]">
+                    {feature.number === "01" && (
+                      <span className="text-base">✳</span>
+                    )}
+                    {feature.number === "02" && (
+                      <span className="text-base">⌕</span>
+                    )}
+                    {feature.number === "03" && (
+                      <span className="text-base">⌘</span>
+                    )}
+                    {feature.number === "04" && (
+                      <span className="text-base">▣</span>
+                    )}
+                  </span>
+                  <span className="text-[10px] text-[#66685f]">
+                    {feature.number}
+                  </span>
+                </div>
 
-              <p className="text-zinc-400">
-                Powered by Gemini AI for intelligent responses,
-                research assistance, and productivity support.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-zinc-800 p-8">
-              <h3 className="mb-4 text-2xl font-semibold">
-                Document Analysis
-              </h3>
-
-              <p className="text-zinc-400">
-                Upload documents and receive summaries,
-                explanations, and extracted insights instantly.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-zinc-800 p-8">
-              <h3 className="mb-4 text-2xl font-semibold">
-                Voice Interaction
-              </h3>
-
-              <p className="text-zinc-400">
-                Speak naturally and interact with the assistant
-                through voice-enabled communication.
-              </p>
-            </div>
-
-            <div className="rounded-3xl border border-zinc-800 p-8">
-              <h3 className="mb-4 text-2xl font-semibold">
-                Desktop Automation
-              </h3>
-
-              <p className="text-zinc-400">
-                Connect a local automation agent to launch apps,
-                manage workflows, and streamline tasks.
-              </p>
-            </div>
+                <h3 className="mt-5 text-[15px] font-medium tracking-[-0.2px]">
+                  {feature.title}
+                </h3>
+                <p className="mt-2 max-w-md text-[12px] leading-6 text-[#999b91]">
+                  {feature.description}
+                </p>
+              </article>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="border-t border-zinc-900 py-24">
-        <div className="mx-auto max-w-4xl px-6 text-center">
-          <h2 className="mb-6 text-5xl font-bold">
-            One Platform.
-            <br />
-            Infinite Possibilities.
-          </h2>
+      {/* Closing call to action */}
+      <section id="about" className="border-t border-white/[0.08]">
+        <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-5 py-14 sm:px-8 md:flex-row md:items-center lg:px-12">
+          <div>
+            <h2 className="text-[23px] font-medium tracking-[-0.7px]">
+              Ready to work a little smarter?
+            </h2>
+            <p className="mt-2 text-[12px] leading-6 text-[#999b91]">
+              Your next idea can start here.
+            </p>
+          </div>
 
-          <p className="mb-10 text-zinc-400">
-            Experience the next generation of AI-powered
-            productivity and automation.
+          <Link
+            href="/login"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#e4e5da] px-4 text-[12px] font-semibold text-[#171813] transition hover:bg-white"
+          >
+            Open Nexus AI
+            <span aria-hidden="true">↗</span>
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-white/[0.08]">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-5 text-[11px] text-[#777970] sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-12">
+          <p>
+            <span className="font-medium text-[#d5d6cd]">nexusai</span>
+            {" "}· Your intelligent workspace
           </p>
-
-          <button className="rounded-2xl bg-white px-10 py-4 font-medium text-black">
-            Get Started
-          </button>
+          <p>Built for focused work and better ideas.</p>
         </div>
-      </section>
+      </footer>
     </main>
   );
 }

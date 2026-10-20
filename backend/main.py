@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
@@ -7,7 +8,7 @@ import os
 
 load_dotenv()
 
-MODEL_NAME = "gemini-3.8-flash"
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 API_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
@@ -24,20 +25,36 @@ if not API_KEYS:
         "No Gemini API keys were found. Check your backend/.env file."
     )
 
+# Keep local development working, and allow production origins
+# to be configured later through FRONTEND_ORIGINS.
+default_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+configured_origins = os.getenv("FRONTEND_ORIGINS", "")
+
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in configured_origins.split(",")
+    if origin.strip()
+]
+
+ALLOWED_ORIGINS = list(
+    dict.fromkeys(default_origins + FRONTEND_ORIGINS)
+)
+
 app = FastAPI(
     title="Nexus AI Backend",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -74,28 +91,27 @@ User Message:
             genai.configure(api_key=key)
 
             model = genai.GenerativeModel(MODEL_NAME)
-
             response = model.generate_content(system_prompt)
 
             if not response.text:
                 raise RuntimeError(
-                    "Gemini returned an empty response."
+                    "The AI provider returned an empty response."
                 )
 
-            print(f"Using Gemini Key #{index}")
-
+            print(f"Gemini API key #{index} succeeded.")
             return response.text
 
         except Exception as error:
+            # Do not print API keys or expose provider errors to users.
             print(
-                f"Gemini Key #{index} failed: {error}"
+                f"Gemini API key #{index} failed: "
+                f"{type(error).__name__}: {error}"
             )
-
             last_error = error
 
     raise RuntimeError(
-        f"All Gemini API keys failed. Last error: {last_error}"
-    )
+        "All configured Gemini API keys failed."
+    ) from last_error
 
 
 @app.get("/")
@@ -103,7 +119,6 @@ async def root():
     return {
         "status": "Nexus AI Backend Running",
         "model": MODEL_NAME,
-        "available_api_keys": len(API_KEYS),
     }
 
 
@@ -112,23 +127,25 @@ async def chat(request: ChatRequest):
     message = request.message.strip()
 
     if not message:
-        return {
-            "reply": "Please enter a message."
-        }
+        raise HTTPException(
+            status_code=400,
+            detail="Please enter a message.",
+        )
 
     try:
         reply = generate_with_failover(message)
-
-        return {
-            "reply": reply
-        }
+        return {"reply": reply}
 
     except Exception as error:
-        print(f"Nexus AI error: {error}")
+        print(
+            f"Nexus AI request failed: "
+            f"{type(error).__name__}: {error}"
+        )
 
-        return {
-            "reply": (
+        raise HTTPException(
+            status_code=503,
+            detail=(
                 "Nexus AI is temporarily unavailable. "
                 "Please try again shortly."
-            )
-        }
+            ),
+        )
