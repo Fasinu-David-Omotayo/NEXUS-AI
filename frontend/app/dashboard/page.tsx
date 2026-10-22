@@ -45,8 +45,6 @@ function cleanTextForSpeech(input: string): string {
 }
 
 
-function NexusMark(
-
 function looksLikeDesktopCommand(input: string): boolean {
   const normalized = input
     .toLowerCase()
@@ -59,6 +57,8 @@ function looksLikeDesktopCommand(input: string): boolean {
 
   return new RegExp(prefix + actions, "i").test(normalized);
 }
+
+function NexusMark(
 { className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
