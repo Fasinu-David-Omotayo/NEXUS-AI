@@ -1,3 +1,4 @@
+
 services:
   - type: web
     name: nexus-ai-backend
@@ -21,3 +22,11 @@ services:
         sync: false
       - key: FRONTEND_ORIGINS
         value: https://nexus-ai-impact3600.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: DESKTOP_AGENT_TOKEN
+        sync: false
+      - key: DESKTOP_OWNER_EMAIL
+        sync: false
