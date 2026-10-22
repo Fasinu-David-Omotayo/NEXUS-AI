@@ -58,8 +58,7 @@ function looksLikeDesktopCommand(input: string): boolean {
   return new RegExp(prefix + actions, "i").test(normalized);
 }
 
-function NexusMark(
-{ className = "h-4 w-4" }: { className?: string }) {
+function NexusMark({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
       className={className}
