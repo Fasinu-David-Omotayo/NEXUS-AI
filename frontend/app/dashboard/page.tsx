@@ -303,7 +303,7 @@ export default function DashboardPage() {
 
       try {
         const apiBaseUrl =
-          process.env.NEXT_PUBLIC_NEXUS_API_URL?.replace(/\\/$/, "") ||
+          process.env.NEXT_PUBLIC_NEXUS_API_URL?.replace(/\/$/, "") ||
           "http://127.0.0.1:8000";
 
         let desktopResult: { handled?: boolean; reply?: string } | null = null;
