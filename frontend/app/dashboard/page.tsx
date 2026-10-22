@@ -45,7 +45,21 @@ function cleanTextForSpeech(input: string): string {
 }
 
 
-function NexusMark({ className = "h-4 w-4" }: { className?: string }) {
+function NexusMark(
+
+function looksLikeDesktopCommand(input: string): boolean {
+  const normalized = input
+    .toLowerCase()
+    .trim()
+    .replace(/[!?.,]+$/g, "");
+
+  const prefix = "^(?:(?:hey nexus|nexus)[, ]*)?(?:(?:please|can you|could you|would you|kindly)\\s+)*";
+  const actions =
+    "(?:open|launch|start|run|close|quit|exit|kill|play|pause|resume|stop|mute|unmute|skip|next|previous|restart|shutdown|lock|unlock|show|hide|search youtube for|find and play|turn up|turn down|increase|decrease)\\b";
+
+  return new RegExp(prefix + actions, "i").test(normalized);
+}
+{ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
       className={className}
@@ -289,35 +303,83 @@ export default function DashboardPage() {
       setLoading(true);
 
       try {
-        // Windows desktop commands are only attempted in the local desktop browser.
-        // On a phone, 127.0.0.1 points to the phone itself, not your PC.
-        const isLocalDesktopBrowser =
-          typeof window !== "undefined" &&
-          (window.location.hostname === "localhost" ||
-            window.location.hostname === "127.0.0.1");
+        const apiBaseUrl =
+          process.env.NEXT_PUBLIC_NEXUS_API_URL?.replace(/\\/$/, "") ||
+          "http://127.0.0.1:8000";
 
         let desktopResult: { handled?: boolean; reply?: string } | null = null;
 
-        if (isLocalDesktopBrowser) {
+        // Only desktop-style requests are sent to the remote control endpoint.
+        // The backend verifies the signed-in Supabase user and permits only the configured owner.
+        if (looksLikeDesktopCommand(cleanedInput)) {
           try {
-            const desktopResponse = await fetch(
-              "http://127.0.0.1:8001/desktop-command",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({ command: cleanedInput }),
-              signal: AbortSignal.timeout(2500),
-            }
-          );
+            const {
+              data: { session },
+            } = await supabase.auth.getSession();
 
-            if (desktopResponse.ok) {
-              desktopResult = await desktopResponse.json();
+            if (!session?.access_token) {
+              throw new Error("Your Nexus AI session has expired. Please sign in again.");
+            }
+
+            const desktopResponse = await fetch(
+              `${apiBaseUrl}/desktop-command`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ command: cleanedInput }),
+                signal: AbortSignal.timeout(23000),
+              }
+            );
+
+            const responseData = await desktopResponse.json().catch(() => ({}));
+
+            if (!desktopResponse.ok) {
+              const detail =
+                typeof responseData.detail === "string"
+                  ? responseData.detail
+                  : "Nexus could not authorize or complete that desktop command.";
+
+              // Do not silently turn authorization/configuration errors into AI chat.
+              desktopResult = {
+                handled: true,
+                reply: detail,
+              };
+            } else {
+              desktopResult = responseData;
             }
           } catch (desktopError) {
-            // The desktop agent may not be running; regular AI chat can still work.
-            console.info("Nexus desktop agent is unavailable; continuing with AI chat.");
+            console.error("Remote Nexus desktop command failed:", desktopError);
+
+            // During local development, allow the existing local agent as a fallback.
+            const isLocalDesktopBrowser =
+              typeof window !== "undefined" &&
+              (window.location.hostname === "localhost" ||
+                window.location.hostname === "127.0.0.1");
+
+            if (isLocalDesktopBrowser) {
+              try {
+                const localResponse = await fetch(
+                  "http://127.0.0.1:8001/desktop-command",
+                  {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ command: cleanedInput }),
+                    signal: AbortSignal.timeout(2500),
+                  }
+                );
+
+                if (localResponse.ok) {
+                  desktopResult = await localResponse.json();
+                }
+              } catch {
+                // Continue below and show the normal assistant response if local fallback is unavailable.
+              }
+            }
           }
         }
 
@@ -341,10 +403,6 @@ export default function DashboardPage() {
         }
 
         // Not a desktop command: use the existing Gemini chat backend unchanged.
-        const apiBaseUrl =
-          process.env.NEXT_PUBLIC_NEXUS_API_URL?.replace(/\/$/, "") ||
-          "http://127.0.0.1:8000";
-
         const response = await fetch(
           `${apiBaseUrl}/chat`,
           {
