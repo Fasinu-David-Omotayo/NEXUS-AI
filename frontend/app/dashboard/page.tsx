@@ -13,6 +13,7 @@ import SpeechRecognition, {
 } from "react-speech-recognition";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Message = {
@@ -309,7 +310,7 @@ export default function DashboardPage() {
         let desktopResult: { handled?: boolean; reply?: string } | null = null;
 
         // Only desktop-style requests are sent to the remote control endpoint.
-        // The backend verifies the signed-in Supabase user and permits only the configured owner.
+        // The backend verifies the signed-in Supabase user and routes commands only to that account’s paired devices.
         if (looksLikeDesktopCommand(cleanedInput)) {
           try {
             const {
@@ -321,7 +322,7 @@ export default function DashboardPage() {
             }
 
             const desktopResponse = await fetch(
-              `${apiBaseUrl}/desktop-command`,
+              `${apiBaseUrl}/v2/desktop/command`,
               {
                 method: "POST",
                 headers: {
@@ -350,35 +351,13 @@ export default function DashboardPage() {
               desktopResult = responseData;
             }
           } catch (desktopError) {
-            console.error("Remote Nexus desktop command failed:", desktopError);
+            console.error("Secure Nexus desktop command failed:", desktopError);
 
-            // During local development, allow the existing local agent as a fallback.
-            const isLocalDesktopBrowser =
-              typeof window !== "undefined" &&
-              (window.location.hostname === "localhost" ||
-                window.location.hostname === "127.0.0.1");
-
-            if (isLocalDesktopBrowser) {
-              try {
-                const localResponse = await fetch(
-                  "http://127.0.0.1:8001/desktop-command",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ command: cleanedInput }),
-                    signal: AbortSignal.timeout(2500),
-                  }
-                );
-
-                if (localResponse.ok) {
-                  desktopResult = await localResponse.json();
-                }
-              } catch {
-                // Continue below and show the normal assistant response if local fallback is unavailable.
-              }
-            }
+            // Fail closed: never bypass account pairing through a localhost agent.
+            desktopResult = {
+              handled: true,
+              reply: "I could not reach the secure desktop relay. Check that this computer is paired to your Nexus account and that the desktop agent is running.",
+            };
           }
         }
 
@@ -559,11 +538,19 @@ export default function DashboardPage() {
     }
 
     const spokenText = transcript.trim();
-    const normalizedText = spokenText
+    let normalizedText = spokenText
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+
+    // Speech recognition commonly mishears "Nexus" as "Nexis" or
+    // splits it into "next us/next is". Normalize these common variants
+    // before matching so users do not have to repeat the wake phrase.
+    normalizedText = normalizedText
+      .replace(/\bhey\s+(?:nexis|nexas|next us|next is|neck sis)\b/g, "hey nexus")
+      .replace(/\bhi\s+nexus\b/g, "hey nexus")
+      .replace(/\bhay\s+nexus\b/g, "hey nexus");
 
     const wakeWord = "hey nexus";
     const sleepPhrases = [
@@ -812,6 +799,7 @@ export default function DashboardPage() {
             <button onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-200">AI Assistant</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Documents</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Automations</button>
+            <Link href="/dashboard/devices" onClick={() => setMobileMenuOpen(false)} className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 hover:bg-white/5 hover:text-white">Desktop devices</Link>
           </div>
         </div>
         <div className="border-t border-white/10 p-4">
@@ -873,6 +861,10 @@ export default function DashboardPage() {
               <button className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300">
                 Automations
               </button>
+
+              <Link href="/dashboard/devices" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">
+                Desktop devices
+              </Link>
             </div>
           </div>
         </div>
