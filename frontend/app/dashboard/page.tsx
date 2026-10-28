@@ -309,7 +309,7 @@ export default function DashboardPage() {
         let desktopResult: { handled?: boolean; reply?: string } | null = null;
 
         // Only desktop-style requests are sent to the remote control endpoint.
-        // The backend verifies the signed-in Supabase user and permits only the configured owner.
+        // The backend verifies the signed-in Supabase user and routes commands only to that account’s paired devices.
         if (looksLikeDesktopCommand(cleanedInput)) {
           try {
             const {
@@ -321,7 +321,7 @@ export default function DashboardPage() {
             }
 
             const desktopResponse = await fetch(
-              `${apiBaseUrl}/desktop-command`,
+              `${apiBaseUrl}/v2/desktop/command`,
               {
                 method: "POST",
                 headers: {
