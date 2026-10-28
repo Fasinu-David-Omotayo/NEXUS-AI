@@ -69,20 +69,84 @@ def save_credentials(credentials: dict[str, str]) -> None:
     print(f"Nexus device credentials saved to: {path}")
 
 
+def request_pairing_details(default_name: str) -> tuple[str, str] | None:
+    """Collect pairing details with a Windows dialog, falling back to terminal input."""
+    if sys.stdin.isatty():
+        code = input("Enter the one-time Nexus pairing code shown in your account (10-minute expiry): ").strip()
+        if not code:
+            print("No pairing code entered. Desktop control remains disabled.")
+            return None
+        name = input(f"Device name [{default_name}]: ").strip() or default_name
+        return code, name
+
+    try:
+        import tkinter as tk
+        from tkinter import messagebox, simpledialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            code = simpledialog.askstring(
+                "Connect Nexus AI Desktop",
+                "Enter the one-time pairing code from your signed-in Nexus AI account.\\nThe code expires in 10 minutes:",
+                parent=root,
+            )
+            if not code or not code.strip():
+                return None
+            name = simpledialog.askstring(
+                "Name this computer",
+                "Choose a name for this computer:",
+                initialvalue=default_name,
+                parent=root,
+            )
+            if name is None:
+                return None
+            return code.strip(), (name.strip() or default_name)
+        finally:
+            root.destroy()
+    except Exception as error:
+        print("Could not open the Nexus pairing window:", type(error).__name__)
+        return None
+
+
+def show_pairing_message(title: str, message: str, *, error: bool = False) -> None:
+    """Show a native Windows message when no console is available."""
+    if sys.stdin.isatty():
+        print(f"{title}: {message}")
+        return
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        try:
+            if error:
+                messagebox.showerror(title, message, parent=root)
+            else:
+                messagebox.showinfo(title, message, parent=root)
+        finally:
+            root.destroy()
+    except Exception:
+        pass
+
+
 async def pair_device() -> dict[str, str] | None:
     # Pairing requires a person at this computer to provide a short-lived
     # code generated inside their signed-in Nexus AI account.
-    if not sys.stdin.isatty():
-        print("Nexus desktop is not paired. Run the pairing app interactively to authorize this computer.")
-        return None
-
-    code = input("Enter the one-time Nexus pairing code shown in your account (10-minute expiry): ").strip()
-    if not code:
-        print("No pairing code entered. Desktop control remains disabled.")
-        return None
-
     default_name = platform.node() or "Windows PC"
-    name = input(f"Device name [{default_name}]: ").strip() or default_name
+    details = request_pairing_details(default_name)
+    if not details:
+        show_pairing_message(
+            "Nexus AI Desktop",
+            "Pairing was cancelled. Desktop control remains disabled.",
+            error=True,
+        )
+        return None
+    code, name = details
+
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
@@ -94,7 +158,11 @@ async def pair_device() -> dict[str, str] | None:
                 },
             )
     except httpx.HTTPError as error:
-        print("Could not reach Nexus pairing service:", type(error).__name__)
+        show_pairing_message(
+            "Nexus AI Desktop",
+            f"Could not reach the Nexus pairing service ({type(error).__name__}). Check your internet connection and try again.",
+            error=True,
+        )
         return None
 
     if response.status_code != 200:
@@ -102,7 +170,7 @@ async def pair_device() -> dict[str, str] | None:
             detail = response.json().get("detail", "Pairing failed.")
         except (ValueError, AttributeError):
             detail = "Pairing failed."
-        print(f"Nexus pairing was not completed: {detail}")
+        show_pairing_message("Nexus AI Desktop", str(detail), error=True)
         return None
 
     body = response.json()
@@ -111,11 +179,18 @@ async def pair_device() -> dict[str, str] | None:
         "device_token": str(body.get("device_token") or ""),
     }
     if not credentials["device_id"] or len(credentials["device_token"]) < 40:
-        print("Pairing response was incomplete. Desktop control remains disabled.")
+        show_pairing_message(
+            "Nexus AI Desktop",
+            "The pairing response was incomplete. Desktop control remains disabled.",
+            error=True,
+        )
         return None
 
     save_credentials(credentials)
-    print("This computer is now paired to your Nexus account.")
+    show_pairing_message(
+        "Nexus AI Desktop",
+        "This computer is now paired to your Nexus AI account. You can close this message; the desktop companion will continue connecting in the background.",
+    )
     return credentials
 
 
