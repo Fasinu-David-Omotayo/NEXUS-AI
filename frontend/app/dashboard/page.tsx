@@ -13,6 +13,7 @@ import SpeechRecognition, {
 } from "react-speech-recognition";
 
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Message = {
@@ -820,6 +821,7 @@ export default function DashboardPage() {
             <button onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-200">AI Assistant</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Documents</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Automations</button>
+            <Link href="/dashboard/devices" onClick={() => setMobileMenuOpen(false)} className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 hover:bg-white/5 hover:text-white">Desktop devices</Link>
           </div>
         </div>
         <div className="border-t border-white/10 p-4">
@@ -881,6 +883,10 @@ export default function DashboardPage() {
               <button className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300">
                 Automations
               </button>
+
+              <Link href="/dashboard/devices" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">
+                Desktop devices
+              </Link>
             </div>
           </div>
         </div>
