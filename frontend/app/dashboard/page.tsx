@@ -351,35 +351,13 @@ export default function DashboardPage() {
               desktopResult = responseData;
             }
           } catch (desktopError) {
-            console.error("Remote Nexus desktop command failed:", desktopError);
+            console.error("Secure Nexus desktop command failed:", desktopError);
 
-            // During local development, allow the existing local agent as a fallback.
-            const isLocalDesktopBrowser =
-              typeof window !== "undefined" &&
-              (window.location.hostname === "localhost" ||
-                window.location.hostname === "127.0.0.1");
-
-            if (isLocalDesktopBrowser) {
-              try {
-                const localResponse = await fetch(
-                  "http://127.0.0.1:8001/desktop-command",
-                  {
-                    method: "POST",
-                    headers: {
-                      "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify({ command: cleanedInput }),
-                    signal: AbortSignal.timeout(2500),
-                  }
-                );
-
-                if (localResponse.ok) {
-                  desktopResult = await localResponse.json();
-                }
-              } catch {
-                // Continue below and show the normal assistant response if local fallback is unavailable.
-              }
-            }
+            // Fail closed: never bypass account pairing through a localhost agent.
+            desktopResult = {
+              handled: true,
+              reply: "I could not reach the secure desktop relay. Check that this computer is paired to your Nexus account and that the desktop agent is running.",
+            };
           }
         }
 
