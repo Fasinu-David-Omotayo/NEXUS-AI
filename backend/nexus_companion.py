@@ -6,6 +6,7 @@ without opening a terminal or Task Manager.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 import webbrowser
@@ -15,6 +16,10 @@ from PIL import Image, ImageDraw
 import pystray
 
 from desktop_agent_online import app
+
+
+# Stable production domain verified from the Nexus AI Vercel project.
+NEXUS_WEB_URL = os.getenv("NEXUS_WEB_URL", "https://nexus-ai-delta-sage.vercel.app")
 
 
 def make_icon() -> Image.Image:
@@ -31,7 +36,7 @@ def run_server(server: uvicorn.Server) -> None:
 
 
 def open_nexus() -> None:
-    webbrowser.open("https://nexus-ai.vercel.app")
+    webbrowser.open(NEXUS_WEB_URL)
 
 
 def quit_companion(icon: pystray.Icon, server: uvicorn.Server) -> None:
