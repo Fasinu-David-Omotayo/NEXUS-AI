@@ -105,6 +105,8 @@ export default function DashboardPage() {
   const voiceEnabledRef = useRef(false);
   const loadingRef = useRef(false);
   const speakingRef = useRef(false);
+  const listeningStartInProgressRef = useRef(false);
+  const listeningRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const autoSendTimerRef =
     useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,17 +163,17 @@ export default function DashboardPage() {
    * Start continuous microphone listening.
    */
   const startContinuousListening = useCallback(async () => {
-    if (!browserSupportsSpeechRecognition) {
+    if (!browserSupportsSpeechRecognition || !voiceEnabledRef.current) {
       return;
     }
 
-    if (!voiceEnabledRef.current) {
+    if (loadingRef.current || speakingRef.current || listeningStartInProgressRef.current) {
       return;
     }
 
-    if (loadingRef.current || speakingRef.current) {
-      return;
-    }
+    // Avoid overlapping startListening calls. The toggle handler and recovery
+    // effect can run close together on the first activation.
+    listeningStartInProgressRef.current = true;
 
     try {
       await SpeechRecognition.startListening({
@@ -180,6 +182,20 @@ export default function DashboardPage() {
       });
     } catch (error) {
       console.error("Speech recognition start error:", error);
+
+      // Chrome can occasionally reject the first start while initializing its
+      // speech service. Retry once after a short delay while voice remains on.
+      if (voiceEnabledRef.current && !loadingRef.current && !speakingRef.current) {
+        if (listeningRetryTimerRef.current) {
+          clearTimeout(listeningRetryTimerRef.current);
+        }
+        listeningRetryTimerRef.current = setTimeout(() => {
+          listeningRetryTimerRef.current = null;
+          void startContinuousListening();
+        }, 900);
+      }
+    } finally {
+      listeningStartInProgressRef.current = false;
     }
   }, [browserSupportsSpeechRecognition]);
 
@@ -627,6 +643,7 @@ export default function DashboardPage() {
     resetTranscript,
     scheduleVoiceSend,
     speakResponse,
+    startContinuousListening,
   ]);
 
   /*
@@ -697,22 +714,30 @@ export default function DashboardPage() {
 
       if (nextState) {
         /*
-         * Browser requires this initial click
-         * to grant microphone access.
-         *
-         * After this, "Hey Nexus" is automatic
-         * during the session.
+         * Start directly from the click so Chrome can use the user gesture
+         * to authorize microphone access. The shared start guard prevents
+         * the recovery effect from starting a second recognition session.
          */
-        await SpeechRecognition.startListening({
-          continuous: true,
-          language: "en-US",
-        });
+        try {
+          await startContinuousListening();
+        } catch (error) {
+          console.error("Could not start Nexus voice assistant:", error);
+          voiceEnabledRef.current = false;
+          setVoiceAssistantEnabled(false);
+          alert("Nexus could not start listening. Check Chrome microphone permission, then try again.");
+        }
       } else {
+        if (listeningRetryTimerRef.current) {
+          clearTimeout(listeningRetryTimerRef.current);
+          listeningRetryTimerRef.current = null;
+        }
+
         SpeechRecognition.stopListening();
 
         window.speechSynthesis?.cancel();
 
         speakingRef.current = false;
+        listeningStartInProgressRef.current = false;
         setIsSpeaking(false);
       }
     };
