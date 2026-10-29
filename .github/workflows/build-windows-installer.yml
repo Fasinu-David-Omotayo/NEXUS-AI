@@ -1,0 +1,71 @@
+name: Build Nexus AI Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "desktop-v*"
+    paths:
+      - "backend/desktop_agent.py"
+      - "backend/desktop_agent_online.py"
+      - "backend/nexus_companion.py"
+      - "backend/requirements.txt"
+      - "installer/windows/**"
+      - ".github/workflows/build-windows-installer.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt pyinstaller pystray pillow
+
+      - name: Build bundled desktop companion
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --name NexusAI-Desktop --paths backend --collect-all pystray --collect-all PIL backend/nexus_companion.py
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path $env:ProgramFiles(x86) "Inno Setup 6/ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            $iscc = Join-Path $env:ProgramFiles "Inno Setup 6/ISCC.exe"
+          }
+          if (!(Test-Path $iscc)) { throw "Inno Setup compiler was not found." }
+          & $iscc "/DAppVersion=0.1.0" "installer/windows/NexusAI.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NexusAI-Windows-Installer
+          path: installer-output/NexusAI-Setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach installer to tagged release
+        if: startsWith(github.ref, 'refs/tags/desktop-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer-output/NexusAI-Setup.exe
