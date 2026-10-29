@@ -575,6 +575,7 @@ export default function DashboardPage() {
     // before matching so users do not have to repeat the wake phrase.
     normalizedText = normalizedText
       .replace(/\bhey\s+(?:nexis|nexas|next us|next is|neck sis)\b/g, "hey nexus")
+      .replace(/\b(?:a|the|uh|eh)\s+nexus\b/g, "hey nexus")
       .replace(/\bhi\s+nexus\b/g, "hey nexus")
       .replace(/\bhay\s+nexus\b/g, "hey nexus");
 
