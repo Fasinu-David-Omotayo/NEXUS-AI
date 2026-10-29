@@ -71,7 +71,7 @@ def save_credentials(credentials: dict[str, str]) -> None:
 
 def request_pairing_details(default_name: str) -> tuple[str, str] | None:
     """Collect pairing details with a Windows dialog, falling back to terminal input."""
-    if sys.stdin.isatty():
+    if sys.stdin is not None and sys.stdin.isatty():
         code = input("Enter the one-time Nexus pairing code shown in your account (10-minute expiry): ").strip()
         if not code:
             print("No pairing code entered. Desktop control remains disabled.")
@@ -112,7 +112,7 @@ def request_pairing_details(default_name: str) -> tuple[str, str] | None:
 
 def show_pairing_message(title: str, message: str, *, error: bool = False) -> None:
     """Show a native Windows message when no console is available."""
-    if sys.stdin.isatty():
+    if sys.stdin is not None and sys.stdin.isatty():
         print(f"{title}: {message}")
         return
     try:
