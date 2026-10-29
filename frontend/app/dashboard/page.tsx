@@ -80,9 +80,11 @@ export default function DashboardPage() {
 
   const {
     transcript,
+    interimTranscript,
     listening,
     resetTranscript,
     browserSupportsSpeechRecognition,
+    isMicrophoneAvailable,
   } = useSpeechRecognition();
 
   const [userEmail, setUserEmail] = useState("");
@@ -529,15 +531,23 @@ export default function DashboardPage() {
       return;
     }
 
+    // Use interim recognition while waiting for the wake phrase. Some browsers
+    // do not finalize a short phrase such as "Hey Nexus" promptly.
+    // Once conversation mode is active, use finalized transcript only so we
+    // do not submit partial desktop commands.
+    const availableSpeech = wakeActive
+      ? transcript.trim()
+      : (transcript.trim() || interimTranscript.trim());
+
     if (
       loading ||
       isSpeaking ||
-      !transcript.trim()
+      !availableSpeech
     ) {
       return;
     }
 
-    const spokenText = transcript.trim();
+    const spokenText = availableSpeech;
     let normalizedText = spokenText
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
@@ -609,6 +619,7 @@ export default function DashboardPage() {
     scheduleVoiceSend(normalizedText);
   }, [
     transcript,
+    interimTranscript,
     voiceAssistantEnabled,
     wakeActive,
     loading,
@@ -742,6 +753,10 @@ export default function DashboardPage() {
   const voiceStatus = (() => {
     if (!voiceAssistantEnabled) {
       return "Voice assistant off";
+    }
+
+    if (!isMicrophoneAvailable) {
+      return "Microphone access blocked";
     }
 
     if (isSpeaking) {
