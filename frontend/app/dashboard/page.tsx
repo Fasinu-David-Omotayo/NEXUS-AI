@@ -647,6 +647,31 @@ export default function DashboardPage() {
   ]);
 
   /*
+   * Temporary wake-word diagnostics.
+   * These logs stay in this browser's developer console and are not sent to the backend.
+   */
+  useEffect(() => {
+    if (!voiceAssistantEnabled) {
+      return;
+    }
+
+    console.info("[Nexus voice diagnostic] Recognition state:", {
+      listening,
+      wakeActive,
+      transcript: transcript.trim(),
+      interimTranscript: interimTranscript.trim(),
+      isMicrophoneAvailable,
+    });
+  }, [
+    voiceAssistantEnabled,
+    listening,
+    wakeActive,
+    transcript,
+    interimTranscript,
+    isMicrophoneAvailable,
+  ]);
+
+  /*
    * Recover continuous listening if Chrome stops
    * recognition because of inactivity.
    */
@@ -1130,24 +1155,40 @@ export default function DashboardPage() {
             className="mx-auto max-w-4xl"
           >
             {voiceAssistantEnabled && (
-              <div className="mb-3 flex items-center justify-center gap-2">
-                <div
-                  className={`h-2 w-2 rounded-full ${
-                    isSpeaking
-                      ? "bg-blue-400"
-                      : wakeActive
-                        ? "animate-pulse bg-red-500"
-                        : listening
-                          ? "animate-pulse bg-emerald-400"
-                          : "bg-zinc-600"
-                  }`}
-                />
-
-                <p className="text-xs text-zinc-500">
-                  {voiceStatus}
-                </p>
+              <div className="mx-auto mb-3 w-full max-w-4xl space-y-2">
+                <div className="flex items-center justify-center gap-2">
+                  <div
+                    className={`h-2 w-2 rounded-full ${
+                      isSpeaking
+                        ? "bg-blue-400"
+                        : wakeActive
+                          ? "animate-pulse bg-red-500"
+                          : listening
+                            ? "animate-pulse bg-emerald-400"
+                            : "bg-zinc-600"
+                    }`}
+                  />
+                  <p className="text-xs text-zinc-500">
+                    {voiceStatus}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-[#101010] px-3 py-2 text-left text-[11px] text-zinc-500">
+                  <p>
+                    <span className="text-zinc-400">Live speech:</span>{" "}
+                    {interimTranscript.trim() || "No interim words received"}
+                  </p>
+                  <p className="mt-1">
+                    <span className="text-zinc-400">Final speech:</span>{" "}
+                    {transcript.trim() || "No finalized words received"}
+                  </p>
+                  <p className="mt-1 text-zinc-600">
+                    Say “test microphone” first, then “Hey Nexus”. These diagnostics stay in this browser.
+                  </p>
+                </div>
               </div>
             )}
+
+            {/* INPUT */}
 
             <div className="rounded-[20px] border border-white/10 bg-[#151515] p-2 shadow-2xl shadow-black/30 sm:rounded-[24px]">
               <textarea
