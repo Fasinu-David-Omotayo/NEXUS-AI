@@ -2,9 +2,7 @@ name: Build Nexus AI Windows Installer
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "desktop-v*"
+  pull_request:
     paths:
       - "backend/desktop_agent.py"
       - "backend/desktop_agent_online.py"
@@ -12,6 +10,19 @@ on:
       - "backend/requirements.txt"
       - "installer/windows/**"
       - ".github/workflows/build-windows-installer.yml"
+  push:
+    branches:
+      - "main"
+      - "feature/windows-companion-installer"
+    paths:
+      - "backend/desktop_agent.py"
+      - "backend/desktop_agent_online.py"
+      - "backend/nexus_companion.py"
+      - "backend/requirements.txt"
+      - "installer/windows/**"
+      - ".github/workflows/build-windows-installer.yml"
+    tags:
+      - "desktop-v*"
 
 permissions:
   contents: write
