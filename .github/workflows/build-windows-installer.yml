@@ -59,7 +59,7 @@ jobs:
       - name: Build Windows installer
         shell: pwsh
         run: |
-          $iscc = Join-Path $env:ProgramFiles(x86) "Inno Setup 6/ISCC.exe"
+          $iscc = Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6/ISCC.exe"
           if (!(Test-Path $iscc)) {
             $iscc = Join-Path $env:ProgramFiles "Inno Setup 6/ISCC.exe"
           }
