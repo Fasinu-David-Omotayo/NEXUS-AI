@@ -140,7 +140,29 @@ def send_browser_hotkey(*keys: str) -> None:
         raise RuntimeError("Browser keyboard shortcuts are supported on Windows only.")
     import ctypes
     user32 = ctypes.windll.user32
-    vk_map = {"ctrl": 0x11, "w": 0x57, "space": 0x20, "media_play_pause": 0xB3, "volume_mute": 0xAD, "volume_down": 0xAE, "volume_up": 0xAF}
+    vk_map = {
+        "ctrl": 0x11,
+        "alt": 0x12,
+        "shift": 0x10,
+        "win": 0x5B,
+        "tab": 0x09,
+        "esc": 0x1B,
+        "f4": 0x73,
+        "r": 0x52,
+        "t": 0x54,
+        "s": 0x53,
+        "d": 0x44,
+        "m": 0x4D,
+        "space": 0x20,
+        "up": 0x26,
+        "down": 0x28,
+        "left": 0x25,
+        "right": 0x27,
+        "media_play_pause": 0xB3,
+        "volume_mute": 0xAD,
+        "volume_down": 0xAE,
+        "volume_up": 0xAF,
+    }
     virtual_keys = [vk_map[key] for key in keys]
     for vk in virtual_keys:
         user32.keybd_event(vk, 0, 0, 0)
@@ -297,6 +319,58 @@ def handle_web_command(command: str) -> Optional[dict[str, object]]:
             return None
         search_url = "https://www.google.com/search?q=" + quote_plus(target)
         return {"handled": True, "success": True, "reply": open_web_url(search_url, f"Searching the web for {target}.")}
+
+    return None
+
+
+def handle_window_command(command: str) -> Optional[dict[str, object]]:
+    """Handle explicit, low-risk Windows window and keyboard actions."""
+    text = re.sub(r"[^a-zA-Z0-9:/?.&=_+\\-\\s]", " ", command.lower())
+    text = re.sub(r"\\s+", " ", text).strip(" .,!?")
+    text = re.sub(r"^(?:hey\\s+nexus|nexus)[, ]*", "", text)
+    text = re.sub(r"^(?:please|can you|could you|would you|kindly)\\s+", "", text)
+
+    hotkey_commands = [
+        (r"^(?:show|display) (?:the )?desktop$", ("win", "d"), "Showing the desktop."),
+        (r"^(?:minimize|hide) (?:the )?(?:current|active) window$", ("win", "down"), "Minimized the active window."),
+        (r"^minimize all windows$", ("win", "m"), "Minimized all windows."),
+        (r"^(?:maximize|full ?screen) (?:the )?(?:current|active) window$", ("win", "up"), "Maximized the active window."),
+        (r"^(?:switch|change) (?:to the )?(?:next )?(?:window|app|application)$", ("alt", "tab"), "Switched windows."),
+        (r"^switch (?:between )?(?:open )?windows$", ("alt", "tab"), "Switched windows."),
+        (r"^(?:snap|move) (?:the )?(?:current|active) window left$", ("win", "left"), "Moved the active window to the left side of the screen."),
+        (r"^(?:snap|move) (?:the )?(?:current|active) window right$", ("win", "right"), "Moved the active window to the right side of the screen."),
+        (r"^(?:refresh|reload) (?:the )?(?:current )?(?:page|window|folder)$", ("ctrl", "r"), "Refreshed the current page or folder."),
+        (r"^(?:open|create) (?:a )?new (?:browser )?tab$", ("ctrl", "t"), "Opened a new browser tab."),
+        (r"^(?:switch to )?the next tab$", ("ctrl", "tab"), "Switched to the next tab."),
+        (r"^(?:switch to )?the previous tab$", ("ctrl", "shift", "tab"), "Switched to the previous tab."),
+        (r"^(?:save|save the current) (?:the )?(?:current )?(?:document|file|work)$", ("ctrl", "s"), "Sent the save shortcut to the active application."),
+        (r"^(?:take|capture) (?:a )?(?:screenshot|screen capture)$", ("win", "shift", "s"), "Opened Windows screen capture. Select the area you want to capture."),
+        (r"^(?:close|exit) (?:the )?(?:active|current) window$", ("alt", "f4"), "Sent the close shortcut to the active window. Windows may ask you to save unsaved work."),
+    ]
+
+    for pattern, keys, reply in hotkey_commands:
+        if re.match(pattern, text):
+            try:
+                send_browser_hotkey(*keys)
+                return {"handled": True, "success": True, "reply": reply}
+            except Exception as exc:
+                return {
+                    "handled": True,
+                    "success": False,
+                    "reply": f"I couldn't complete that window action. {exc}",
+                }
+
+    if re.match(r"^(?:lock|lock the) (?:my )?(?:computer|pc|workstation|screen)$", text):
+        if os.name != "nt":
+            return {"handled": True, "success": False, "reply": "Locking the workstation is supported on Windows only."}
+        try:
+            import ctypes
+
+            if not ctypes.windll.user32.LockWorkStation():
+                raise OSError("Windows did not accept the lock request.")
+            return {"handled": True, "success": True, "reply": "Locking your Windows workstation."}
+        except Exception as exc:
+            return {"handled": True, "success": False, "reply": f"I couldn't lock the workstation. {exc}"}
 
     return None
 
@@ -527,6 +601,9 @@ def health() -> dict[str, str]:
 @app.post("/desktop-command")
 def desktop_command(payload: DesktopCommand) -> dict[str, object]:
     command = payload.command.strip()
+    window_result = handle_window_command(command)
+    if window_result is not None:
+        return window_result
     web_result = handle_web_command(command)
     if web_result is not None:
         return web_result
