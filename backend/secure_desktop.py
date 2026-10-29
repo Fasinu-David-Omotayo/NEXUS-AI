@@ -324,94 +324,182 @@ async def desktop_command(
 
 @router.websocket("/ws")
 async def desktop_agent_socket(websocket: WebSocket):
-    # Authentication is the first websocket message so the long-lived secret
-    # is not placed in a URL/query string where proxies may log it.
-    await websocket.accept()
+    """Authenticate and maintain one secure connection per paired device.
+
+    Once a WebSocket is accepted, errors must be reported with WebSocket close
+    frames, not HTTPException responses. Raising HTTPException after accept()
+    makes Starlette attempt an HTTP response on an established WebSocket and
+    can produce Uvicorn's "Expected websocket.send or websocket.close" error.
+    """
+    device_id: str | None = None
+    accepted = False
+
     try:
-        first = await asyncio.wait_for(websocket.receive_json(), timeout=10)
-    except Exception:
-        await websocket.close(code=1008, reason="Authentication required")
-        return
-    if not isinstance(first, dict) or first.get("type") != "authenticate":
-        await websocket.close(code=1008, reason="Authentication required")
-        return
-    device_id = first.get("device_id")
-    token = first.get("device_token")
-    if not isinstance(device_id, str) or not isinstance(token, str) or len(token) < 40:
-        await websocket.close(code=1008, reason="Invalid device credentials")
-        return
-    _require_service_key()
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            response = await client.get(
-                f"{SUPABASE_URL}/rest/v1/desktop_devices",
-                params={
-                    "select": "id,token_hash,status",
-                    "id": f"eq.{device_id}",
-                    "limit": "1",
-                },
-                headers=_admin_headers(),
-            )
-    except Exception:
-        await websocket.close(code=1013, reason="Could not verify device")
-        return
-    rows = response.json() if response.status_code == 200 else []
-    if not rows or rows[0].get("status") == "revoked" or not hmac.compare_digest(
-        str(rows[0].get("token_hash") or ""), _digest(token)
-    ):
-        await websocket.close(code=1008, reason="Device is not paired or was revoked")
-        return
-    await websocket.send_json({"type": "authenticated", "device_id": device_id})
-    async with connection_lock:
-        previous = active_agents.get(device_id)
-        active_agents[device_id] = websocket
-    if previous is not None and previous is not websocket:
+        # Validate server configuration before accepting the WebSocket. If the
+        # service is misconfigured, close the handshake cleanly with a policy
+        # failure rather than raising an HTTP exception after accept().
         try:
-            await previous.close(code=1012, reason="Device reconnected")
+            _require_service_key()
+        except HTTPException:
+            await websocket.close(code=1011, reason="Secure desktop is not configured")
+            return
+
+        await websocket.accept()
+        accepted = True
+
+        try:
+            first = await asyncio.wait_for(websocket.receive_json(), timeout=10)
+        except asyncio.TimeoutError:
+            await websocket.close(code=1008, reason="Authentication timed out")
+            return
+        except WebSocketDisconnect:
+            return
         except Exception:
-            pass
-    # Update online state in the database.
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            await client.patch(
-                f"{SUPABASE_URL}/rest/v1/desktop_devices",
-                params={"id": f"eq.{device_id}"},
-                json={"status": "online", "last_seen_at": datetime.now(timezone.utc).isoformat()},
-                headers=_admin_headers("return=minimal"),
+            await websocket.close(code=1008, reason="Valid authentication message required")
+            return
+
+        if not isinstance(first, dict) or first.get("type") != "authenticate":
+            await websocket.close(code=1008, reason="Authentication required")
+            return
+
+        candidate_device_id = first.get("device_id")
+        token = first.get("device_token")
+        if (
+            not isinstance(candidate_device_id, str)
+            or not candidate_device_id
+            or not isinstance(token, str)
+            or len(token) < 40
+        ):
+            await websocket.close(code=1008, reason="Invalid device credentials")
+            return
+
+        device_id = candidate_device_id
+
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                response = await client.get(
+                    f"{SUPABASE_URL}/rest/v1/desktop_devices",
+                    params={
+                        "select": "id,token_hash,status",
+                        "id": f"eq.{device_id}",
+                        "limit": "1",
+                    },
+                    headers=_admin_headers(),
+                )
+        except httpx.HTTPError as exc:
+            print("Secure desktop credential lookup failed:", type(exc).__name__)
+            await websocket.close(code=1013, reason="Could not verify device")
+            return
+        except HTTPException:
+            await websocket.close(code=1011, reason="Secure desktop is not configured")
+            return
+
+        if response.status_code != 200:
+            print("Secure desktop credential lookup returned HTTP", response.status_code)
+            await websocket.close(code=1013, reason="Could not verify device")
+            return
+
+        try:
+            rows = response.json()
+        except ValueError:
+            rows = []
+
+        if (
+            not isinstance(rows, list)
+            or not rows
+            or rows[0].get("status") == "revoked"
+            or not hmac.compare_digest(
+                str(rows[0].get("token_hash") or ""),
+                _digest(token),
             )
+        ):
+            await websocket.close(code=1008, reason="Device is not paired or was revoked")
+            return
+
+        await websocket.send_json({"type": "authenticated", "device_id": device_id})
+
+        async with connection_lock:
+            previous = active_agents.get(device_id)
+            active_agents[device_id] = websocket
+
+        if previous is not None and previous is not websocket:
+            try:
+                await previous.close(code=1012, reason="Device reconnected")
+            except Exception:
+                pass
+
+        # Mark online best-effort. A database status update failure must not
+        # terminate an otherwise authenticated relay connection.
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                status_response = await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/desktop_devices",
+                    params={"id": f"eq.{device_id}", "status": "neq.revoked"},
+                    json={
+                        "status": "online",
+                        "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    headers=_admin_headers("return=minimal"),
+                )
+            if status_response.status_code not in (200, 204):
+                print("Secure desktop online-state update returned HTTP", status_response.status_code)
+        except Exception as exc:
+            print("Secure desktop online-state update failed:", type(exc).__name__)
+
         while True:
             message = await websocket.receive_json()
             if not isinstance(message, dict) or not isinstance(message.get("id"), str):
                 continue
+
             pending = pending_responses.get(message["id"])
             if pending is None:
                 continue
+
             pending_device, pending_socket, future = pending
             if pending_device != device_id or pending_socket is not websocket or future.done():
                 continue
+
             result = message.get("result")
-            future.set_result(result if isinstance(result, dict) else {
-                "handled": True, "success": False, "reply": "Invalid desktop response."
-            })
+            future.set_result(
+                result
+                if isinstance(result, dict)
+                else {
+                    "handled": True,
+                    "success": False,
+                    "reply": "Invalid desktop response.",
+                }
+            )
+
     except WebSocketDisconnect:
         pass
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        print("Secure desktop websocket ended:", type(exc).__name__)
+        print("Secure desktop websocket ended:", type(exc).__name__, str(exc)[:200])
+        # Do not raise HTTPException after websocket.accept(). Close the socket
+        # only if it was accepted and is still open.
+        if accepted:
+            try:
+                await websocket.close(code=1011, reason="Desktop relay error")
+            except Exception:
+                pass
     finally:
-        async with connection_lock:
-            if active_agents.get(device_id) is websocket:
-                active_agents.pop(device_id, None)
-                try:
-                    async with httpx.AsyncClient(timeout=5.0) as client:
-                        await client.patch(
-                            f"{SUPABASE_URL}/rest/v1/desktop_devices",
-                            params={"id": f"eq.{device_id}", "status": "neq.revoked"},
-                            json={"status": "offline"},
-                            headers=_admin_headers("return=minimal"),
-                        )
-                except Exception:
-                    pass
-        for request_id, (pending_device, pending_socket, future) in list(pending_responses.items()):
-            if pending_device == device_id and pending_socket is websocket and not future.done():
-                future.set_exception(RuntimeError("Desktop disconnected."))
-                pending_responses.pop(request_id, None)
+        if device_id is not None:
+            async with connection_lock:
+                if active_agents.get(device_id) is websocket:
+                    active_agents.pop(device_id, None)
+                    try:
+                        async with httpx.AsyncClient(timeout=5.0) as client:
+                            await client.patch(
+                                f"{SUPABASE_URL}/rest/v1/desktop_devices",
+                                params={"id": f"eq.{device_id}", "status": "neq.revoked"},
+                                json={"status": "offline"},
+                                headers=_admin_headers("return=minimal"),
+                            )
+                    except Exception as exc:
+                        print("Secure desktop offline-state update failed:", type(exc).__name__)
+
+            for request_id, (pending_device, pending_socket, future) in list(pending_responses.items()):
+                if pending_device == device_id and pending_socket is websocket and not future.done():
+                    future.set_exception(RuntimeError("Desktop disconnected."))
+                    pending_responses.pop(request_id, None)
