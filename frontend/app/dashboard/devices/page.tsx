@@ -131,7 +131,7 @@ export default function DesktopDevicesPage() {
         <section className="mt-8 rounded-2xl border border-white/10 bg-[#111] p-5 sm:p-6">
           <h2 className="text-lg font-medium">Pair a new computer</h2>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Generate a one-time code, then enter it in the Nexus desktop pairing app on the computer you want to authorize. The current background agent still needs the matching pairing-client update before it can complete this step.
+            Generate a one-time code, then enter it when the Nexus AI Desktop app opens its pairing window on the computer you want to authorize. If you previously revoked this computer, the app will clear its old credentials and ask for a fresh code automatically.
           </p>
           <form onSubmit={createCode} className="mt-5 flex flex-col gap-3 sm:flex-row">
             <label className="flex-1">
