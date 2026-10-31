@@ -1,9 +1,4 @@
-"""Nexus AI Desktop companion launcher.
-
-This is the packaged Windows entry point. It runs the existing secure relay agent
-and provides a Windows notification-area menu so users can open the correct
-Nexus AI production website or quit the companion without a terminal.
-"""
+"""Nexus AI Desktop Windows tray companion."""
 from __future__ import annotations
 
 import os
@@ -11,15 +6,12 @@ import threading
 import time
 import webbrowser
 
+import pystray
 import uvicorn
 from PIL import Image, ImageDraw
-import pystray
 
-from desktop_agent_online import app
+from desktop_agent_online import app, request_repair
 
-
-# Canonical Nexus AI production website. Keep this aligned with the deployed
-# frontend so account sign-in and device pairing happen on the correct domain.
 NEXUS_WEB_URL = os.getenv("NEXUS_WEB_URL", "https://nexus-ai-impact3600.vercel.app/")
 
 
@@ -40,6 +32,10 @@ def open_nexus() -> None:
     webbrowser.open(NEXUS_WEB_URL)
 
 
+def pair_this_computer() -> None:
+    request_repair()
+
+
 def quit_companion(icon: pystray.Icon, server: uvicorn.Server) -> None:
     server.should_exit = True
     icon.stop()
@@ -52,18 +48,10 @@ def main() -> None:
         port=0,
         log_level="warning",
         access_log=False,
-        # PyInstaller --windowed has no console streams. Uvicorn's default
-        # logging formatter calls sys.stderr.isatty(), which crashes when
-        # sys.stderr is None. Disable its console logging setup in GUI mode.
         log_config=None,
     )
     server = uvicorn.Server(config)
-    server_thread = threading.Thread(
-        target=run_server,
-        args=(server,),
-        name="NexusRelay",
-        daemon=True,
-    )
+    server_thread = threading.Thread(target=run_server, args=(server,), name="NexusRelay", daemon=True)
     server_thread.start()
 
     deadline = time.monotonic() + 10
@@ -71,7 +59,9 @@ def main() -> None:
         time.sleep(0.1)
 
     menu = pystray.Menu(
+        pystray.MenuItem("Pair / Re-pair this computer", lambda icon, item: pair_this_computer()),
         pystray.MenuItem("Open Nexus AI website", lambda icon, item: open_nexus()),
+        pystray.Menu.SEPARATOR,
         pystray.MenuItem("Quit Nexus AI Desktop", lambda icon, item: quit_companion(icon, server)),
     )
     icon = pystray.Icon("NexusAI", make_icon(), "Nexus AI Desktop", menu)
