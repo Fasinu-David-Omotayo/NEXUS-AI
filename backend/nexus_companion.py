@@ -1,8 +1,8 @@
 """Nexus AI Desktop companion launcher.
 
 This is the packaged Windows entry point. It runs the existing secure relay agent
-and provides a Windows notification-area menu so users can quit the companion
-without opening a terminal or Task Manager.
+and provides a Windows notification-area menu so users can open the correct
+Nexus AI production website or quit the companion without a terminal.
 """
 from __future__ import annotations
 
@@ -18,8 +18,9 @@ import pystray
 from desktop_agent_online import app
 
 
-# Stable production domain verified from the Nexus AI Vercel project.
-NEXUS_WEB_URL = os.getenv("NEXUS_WEB_URL", "https://nexus-ai-delta-sage.vercel.app")
+# Canonical Nexus AI production website. Keep this aligned with the deployed
+# frontend so account sign-in and device pairing happen on the correct domain.
+NEXUS_WEB_URL = os.getenv("NEXUS_WEB_URL", "https://nexus-ai-impact3600.vercel.app/")
 
 
 def make_icon() -> Image.Image:
