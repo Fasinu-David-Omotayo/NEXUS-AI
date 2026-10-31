@@ -71,7 +71,7 @@ def save_credentials(credentials: dict[str, str]) -> None:
 
 def request_pairing_details(default_name: str) -> tuple[str, str] | None:
     """Collect pairing details with a Windows dialog, falling back to terminal input."""
-    if sys.stdin.isatty():
+    if sys.stdin is not None and sys.stdin.isatty():
         code = input("Enter the one-time Nexus pairing code shown in your account (10-minute expiry): ").strip()
         if not code:
             print("No pairing code entered. Desktop control remains disabled.")
@@ -89,7 +89,7 @@ def request_pairing_details(default_name: str) -> tuple[str, str] | None:
         try:
             code = simpledialog.askstring(
                 "Connect Nexus AI Desktop",
-                "Enter the one-time pairing code from your signed-in Nexus AI account.\\nThe code expires in 10 minutes:",
+                "1. Generate a code on Nexus AI > Desktop devices.\n2. Paste the code below.\n\nThe code expires in 10 minutes:",
                 parent=root,
             )
             if not code or not code.strip():
@@ -112,7 +112,7 @@ def request_pairing_details(default_name: str) -> tuple[str, str] | None:
 
 def show_pairing_message(title: str, message: str, *, error: bool = False) -> None:
     """Show a native Windows message when no console is available."""
-    if sys.stdin.isatty():
+    if sys.stdin is not None and sys.stdin.isatty():
         print(f"{title}: {message}")
         return
     try:
@@ -256,6 +256,44 @@ async def keep_connected() -> None:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            # A revoked device is intentionally rejected by the server with
+            # WebSocket close code 1008 and this reason. The previous behavior
+            # kept retrying the now-invalid saved token forever, so the user
+            # could never pair the same computer again.
+            close_frame = getattr(error, "rcvd", None)
+            close_code = getattr(error, "code", None)
+            close_reason = getattr(error, "reason", "") or ""
+            if close_frame is not None:
+                close_code = getattr(close_frame, "code", close_code)
+                close_reason = getattr(close_frame, "reason", close_reason) or close_reason
+
+            revoked_or_unpaired = (
+                close_code == 1008
+                and (
+                    "revoked" in close_reason.lower()
+                    or "not paired" in close_reason.lower()
+                )
+            )
+            if revoked_or_unpaired:
+                print("This Nexus desktop pairing was revoked. Clearing the old credentials and requesting a new pairing.")
+                try:
+                    credential_path().unlink(missing_ok=True)
+                except OSError as clear_error:
+                    print("Could not clear revoked Nexus credentials:", type(clear_error).__name__)
+                    return
+
+                show_pairing_message(
+                    "Nexus AI Desktop",
+                    "This computer's previous access was revoked. Generate a fresh one-time pairing code in Nexus AI > Desktop devices. This computer will now ask you for that code.",
+                    error=True,
+                )
+                credentials = await pair_device()
+                if not credentials:
+                    # Do not keep retrying a revoked token. The user can restart
+                    # the companion after generating another code.
+                    return
+                continue
+
             print(
                 "Nexus desktop relay disconnected:",
                 type(error).__name__,
@@ -264,8 +302,49 @@ async def keep_connected() -> None:
         await asyncio.sleep(5)
 
 
+
+
+async def repair_remote_agent() -> None:
+    """Stop the old relay session, discard its token, and launch pairing again."""
+    task = getattr(app.state, "remote_agent_task", None)
+    current = asyncio.current_task()
+    if task is not None and task is not current and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        credential_path().unlink(missing_ok=True)
+    except OSError as error:
+        show_pairing_message(
+            "Nexus AI Desktop",
+            f"Could not clear the previous device credentials: {error}",
+            error=True,
+        )
+        return
+
+    app.state.remote_agent_task = asyncio.create_task(keep_connected())
+
+
+def request_repair() -> bool:
+    """Thread-safe entry point called by the Windows tray menu."""
+    loop = getattr(app.state, "event_loop", None)
+    if loop is None or not loop.is_running():
+        show_pairing_message(
+            "Nexus AI Desktop",
+            "The desktop service is still starting. Please try again in a few seconds.",
+            error=True,
+        )
+        return False
+    asyncio.run_coroutine_threadsafe(repair_remote_agent(), loop)
+    return True
+
+
 @app.on_event("startup")
 async def start_remote_agent() -> None:
+    app.state.event_loop = asyncio.get_running_loop()
     app.state.remote_agent_task = asyncio.create_task(keep_connected())
 
 

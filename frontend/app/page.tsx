@@ -65,6 +65,12 @@ export default function HomePage() {
             >
               Platform
             </a>
+            <Link
+              href="/download"
+              className="text-[13px] text-[#a3a59c] transition hover:text-white"
+            >
+              Windows app
+            </Link>
             <a
               href="#features"
               className="text-[13px] text-[#a3a59c] transition hover:text-white"
@@ -79,13 +85,21 @@ export default function HomePage() {
             </a>
           </div>
 
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3.5 py-2 text-[13px] font-medium transition hover:border-white/30 hover:bg-white/[0.05]"
-          >
-            Sign in
-            <span aria-hidden="true">↗</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/download"
+              className="hidden text-[13px] text-[#b8c9a8] transition hover:text-white sm:inline"
+            >
+              Download app
+            </Link>
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3.5 py-2 text-[13px] font-medium transition hover:border-white/30 hover:bg-white/[0.05]"
+            >
+              Sign in
+              <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
         </nav>
       </header>
 
