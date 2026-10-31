@@ -256,6 +256,44 @@ async def keep_connected() -> None:
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            # A revoked device is intentionally rejected by the server with
+            # WebSocket close code 1008 and this reason. The previous behavior
+            # kept retrying the now-invalid saved token forever, so the user
+            # could never pair the same computer again.
+            close_frame = getattr(error, "rcvd", None)
+            close_code = getattr(error, "code", None)
+            close_reason = getattr(error, "reason", "") or ""
+            if close_frame is not None:
+                close_code = getattr(close_frame, "code", close_code)
+                close_reason = getattr(close_frame, "reason", close_reason) or close_reason
+
+            revoked_or_unpaired = (
+                close_code == 1008
+                and (
+                    "revoked" in close_reason.lower()
+                    or "not paired" in close_reason.lower()
+                )
+            )
+            if revoked_or_unpaired:
+                print("This Nexus desktop pairing was revoked. Clearing the old credentials and requesting a new pairing.")
+                try:
+                    credential_path().unlink(missing_ok=True)
+                except OSError as clear_error:
+                    print("Could not clear revoked Nexus credentials:", type(clear_error).__name__)
+                    return
+
+                show_pairing_message(
+                    "Nexus AI Desktop",
+                    "This computer's previous access was revoked. Generate a fresh one-time pairing code in Nexus AI > Desktop devices. This computer will now ask you for that code.",
+                    error=True,
+                )
+                credentials = await pair_device()
+                if not credentials:
+                    # Do not keep retrying a revoked token. The user can restart
+                    # the companion after generating another code.
+                    return
+                continue
+
             print(
                 "Nexus desktop relay disconnected:",
                 type(error).__name__,
