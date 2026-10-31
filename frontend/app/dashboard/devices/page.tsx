@@ -131,7 +131,7 @@ export default function DesktopDevicesPage() {
         <section className="mt-8 rounded-2xl border border-white/10 bg-[#111] p-5 sm:p-6">
           <h2 className="text-lg font-medium">Pair a new computer</h2>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
-            Generate a one-time code, then enter it when the Nexus AI Desktop app opens its pairing window on the computer you want to authorize. If you previously revoked this computer, the app will clear its old credentials and ask for a fresh code automatically.
+            First, open the Nexus AI icon in the Windows notification area (near the clock) and choose Pair / Re-pair this computer. Then generate a code below. Paste that code into the Windows pairing window and choose a device name. Keep this computer with you while pairing.
           </p>
           <form onSubmit={createCode} className="mt-5 flex flex-col gap-3 sm:flex-row">
             <label className="flex-1">
@@ -146,7 +146,7 @@ export default function DesktopDevicesPage() {
               <p className="text-xs text-zinc-500">One-time pairing code</p>
               <p className="mt-2 select-all font-mono text-3xl font-semibold tracking-[0.2em]">{pairing.code}</p>
               <p className="mt-3 text-xs text-zinc-500">Expires: {new Date(pairing.expires_at).toLocaleString()}</p>
-              <p className="mt-2 text-xs text-amber-200">Treat this code like a temporary password. Do not share it with anyone or paste it into a public chat.</p>
+              <p className="mt-2 text-xs text-amber-200">Treat this code like a temporary password. Enter it only in the pairing window on the computer you are authorizing.</p>
             </div>
           )}
         </section>
