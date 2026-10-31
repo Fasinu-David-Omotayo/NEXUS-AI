@@ -51,6 +51,10 @@ def main() -> None:
         port=0,
         log_level="warning",
         access_log=False,
+        # PyInstaller --windowed has no console streams. Uvicorn's default
+        # logging formatter calls sys.stderr.isatty(), which crashes when
+        # sys.stderr is None. Disable its console logging setup in GUI mode.
+        log_config=None,
     )
     server = uvicorn.Server(config)
     server_thread = threading.Thread(
