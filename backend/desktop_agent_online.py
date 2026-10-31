@@ -89,7 +89,7 @@ def request_pairing_details(default_name: str) -> tuple[str, str] | None:
         try:
             code = simpledialog.askstring(
                 "Connect Nexus AI Desktop",
-                "Enter the one-time pairing code from your signed-in Nexus AI account.\\nThe code expires in 10 minutes:",
+                "1. Generate a code on Nexus AI > Desktop devices.\n2. Paste the code below.\n\nThe code expires in 10 minutes:",
                 parent=root,
             )
             if not code or not code.strip():
@@ -302,8 +302,49 @@ async def keep_connected() -> None:
         await asyncio.sleep(5)
 
 
+
+
+async def repair_remote_agent() -> None:
+    """Stop the old relay session, discard its token, and launch pairing again."""
+    task = getattr(app.state, "remote_agent_task", None)
+    current = asyncio.current_task()
+    if task is not None and task is not current and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    try:
+        credential_path().unlink(missing_ok=True)
+    except OSError as error:
+        show_pairing_message(
+            "Nexus AI Desktop",
+            f"Could not clear the previous device credentials: {error}",
+            error=True,
+        )
+        return
+
+    app.state.remote_agent_task = asyncio.create_task(keep_connected())
+
+
+def request_repair() -> bool:
+    """Thread-safe entry point called by the Windows tray menu."""
+    loop = getattr(app.state, "event_loop", None)
+    if loop is None or not loop.is_running():
+        show_pairing_message(
+            "Nexus AI Desktop",
+            "The desktop service is still starting. Please try again in a few seconds.",
+            error=True,
+        )
+        return False
+    asyncio.run_coroutine_threadsafe(repair_remote_agent(), loop)
+    return True
+
+
 @app.on_event("startup")
 async def start_remote_agent() -> None:
+    app.state.event_loop = asyncio.get_running_loop()
     app.state.remote_agent_task = asyncio.create_task(keep_connected())
 
 
