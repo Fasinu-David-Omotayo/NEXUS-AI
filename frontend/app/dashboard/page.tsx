@@ -89,6 +89,9 @@ export default function DashboardPage() {
 
   const [userEmail, setUserEmail] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -154,6 +157,20 @@ export default function DashboardPage() {
       if (!session) {
         router.replace("/login");
         return;
+      }
+
+      userIdRef.current = session.user.id;
+      const requestedConversationId = new URLSearchParams(window.location.search).get("conversation");
+      if (requestedConversationId) {
+        const { data: conversation, error: conversationError } = await supabase.from("conversations").select("id").eq("id", requestedConversationId).eq("user_id", session.user.id).maybeSingle();
+        if (!conversationError && conversation) {
+          const { data: savedMessages, error: messagesError } = await supabase.from("conversation_messages").select("id,role,content").eq("conversation_id", conversation.id).eq("user_id", session.user.id).order("created_at", { ascending: true });
+          if (!messagesError) {
+            activeConversationIdRef.current = conversation.id;
+            setActiveConversationId(conversation.id);
+            setMessages((savedMessages ?? []) as Message[]);
+          }
+        }
       }
 
       const email = session.user.email ?? "";
@@ -320,6 +337,26 @@ export default function DashboardPage() {
   );
 
 
+  const getOrCreateConversation = useCallback(async (firstMessage: string) => {
+    if (activeConversationIdRef.current) return activeConversationIdRef.current;
+    const userId = userIdRef.current;
+    if (!userId) throw new Error("Your Nexus AI session has expired. Please sign in again.");
+    const title = firstMessage.replace(/\\s+/g, " ").trim().slice(0, 60) || "New conversation";
+    const { data, error } = await supabase.from("conversations").insert({ user_id: userId, title }).select("id").single();
+    if (error || !data) throw error ?? new Error("Could not create conversation.");
+    activeConversationIdRef.current = data.id;
+    setActiveConversationId(data.id);
+    window.history.replaceState({}, "", `/dashboard?conversation=${data.id}`);
+    return data.id;
+  }, []);
+
+  const saveConversationMessage = useCallback(async (conversationId: string, message: Message) => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    const { error } = await supabase.from("conversation_messages").insert({ conversation_id: conversationId, user_id: userId, role: message.role, content: message.content });
+    if (error) console.error("Could not save Nexus conversation message:", error);
+  }, []);
+
   /*
    * Send a message to FastAPI.
    *
@@ -350,18 +387,27 @@ export default function DashboardPage() {
       resetTranscript();
       // Do not clear wakeActive here: it represents the ongoing conversation session.
 
+      let conversationId: string | null = null;
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
         content: cleanedInput,
       };
 
-      setMessages((current) => [
-        ...current,
-        userMessage,
-      ]);
-
+      setMessages((current) => [...current, userMessage]);
       setInput("");
+
+      // Start persistence in parallel with the AI request; database latency
+      // must not delay the first response token.
+      const conversationSetup = getOrCreateConversation(cleanedInput)
+        .then((id) => {
+          conversationId = id;
+          return id;
+        })
+        .catch((conversationError) => {
+          console.error("Could not start saved conversation:", conversationError);
+          return null;
+        });
 
       loadingRef.current = true;
       setLoading(true);
@@ -433,6 +479,13 @@ export default function DashboardPage() {
           };
 
           setMessages((current) => [...current, assistantMessage]);
+          conversationId = await conversationSetup;
+          if (conversationId) {
+            await Promise.all([
+              saveConversationMessage(conversationId, userMessage),
+              saveConversationMessage(conversationId, assistantMessage),
+            ]);
+          }
           loadingRef.current = false;
           setLoading(false);
 
@@ -444,40 +497,55 @@ export default function DashboardPage() {
           return;
         }
 
-        // Not a desktop command: use the existing Gemini chat backend unchanged.
-        const response = await fetch(
-          `${apiBaseUrl}/chat`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message: cleanedInput,
-            }),
-          }
-        );
+        // Stream tokens as they arrive instead of waiting for the complete answer.
+        const response = await fetch(`${apiBaseUrl}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: cleanedInput }),
+          signal: AbortSignal.timeout(120000),
+        });
 
-        if (!response.ok) {
-          throw new Error(
-            "The Nexus AI backend returned an error."
-          );
+        if (!response.ok || !response.body) {
+          throw new Error("The Nexus AI backend returned an error.");
         }
 
-        const data = await response.json();
-
-        const assistantMessage: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            data.reply ||
-            "I could not generate a response.",
-        };
-
+        const assistantMessageId = crypto.randomUUID();
+        let streamedReply = "";
         setMessages((current) => [
           ...current,
-          assistantMessage,
+          { id: assistantMessageId, role: "assistant", content: "" },
         ]);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          streamedReply += decoder.decode(value, { stream: true });
+          const currentReply = streamedReply;
+          setMessages((current) => current.map((item) =>
+            item.id === assistantMessageId ? { ...item, content: currentReply } : item
+          ));
+        }
+        streamedReply += decoder.decode();
+
+        if (!streamedReply.trim()) {
+          throw new Error("Nexus AI returned an empty response.");
+        }
+
+        const assistantMessage: Message = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: streamedReply,
+        };
+
+        conversationId = await conversationSetup;
+        if (conversationId) {
+          await Promise.all([
+            saveConversationMessage(conversationId, userMessage),
+            saveConversationMessage(conversationId, assistantMessage),
+          ]);
+        }
 
         loadingRef.current = false;
         setLoading(false);
@@ -506,10 +574,14 @@ export default function DashboardPage() {
             "I could not connect to the Nexus AI backend. Make sure the Python server is running.",
         };
 
-        setMessages((current) => [
-          ...current,
-          errorMessage,
-        ]);
+        setMessages((current) => [...current, errorMessage]);
+        conversationId = await conversationSetup;
+        if (conversationId) {
+          await Promise.all([
+            saveConversationMessage(conversationId, userMessage),
+            saveConversationMessage(conversationId, errorMessage),
+          ]);
+        }
 
         loadingRef.current = false;
         setLoading(false);
@@ -525,6 +597,8 @@ export default function DashboardPage() {
       resetTranscript,
       speakResponse,
       startContinuousListening,
+      getOrCreateConversation,
+      saveConversationMessage,
     ]
   );
 
@@ -805,6 +879,9 @@ export default function DashboardPage() {
 
   const startNewConversation = () => {
     setMobileMenuOpen(false);
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    window.history.replaceState({}, "", "/dashboard");
     setMessages([]);
     setInput("");
 
@@ -970,6 +1047,7 @@ export default function DashboardPage() {
           <button onClick={startNewConversation} className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-left text-sm text-zinc-300 hover:bg-white/5">＋ New conversation</button>
           <p className="mt-8 px-3 text-xs font-medium uppercase tracking-[0.18em] text-zinc-600">Workspace</p>
           <div className="mt-3 space-y-1">
+              <Link href="/dashboard/conversations" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">Conversation history</Link>
             <button onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-200">AI Assistant</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Documents</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Automations</button>
@@ -1024,6 +1102,7 @@ export default function DashboardPage() {
             </p>
 
             <div className="mt-3 space-y-1">
+              <Link href="/dashboard/conversations" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">Conversation history</Link>
               <button className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-300">
                 AI Assistant
               </button>

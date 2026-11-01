@@ -21,10 +21,12 @@ services:
       - key: GEMINI_API_KEY_5
         sync: false
       - key: FRONTEND_ORIGINS
-        value: https://nexus-ai-impact3600.vercel.app
+        value: https://nexus-ai-impact3600.vercel.app,https://nexus-ai-git-feature-v04-conversation-management-impact3600.vercel.app
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: DESKTOP_AGENT_TOKEN
         sync: false
