@@ -885,7 +885,7 @@ export default function DashboardPage() {
 
             <div className="mt-8 grid gap-3 md:grid-cols-3">
               <article className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b8c9a8]/10 text-[#c6d4b8]"><icon className="text-lg">✳</icon></div>
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b8c9a8]/10 text-[#c6d4b8]"><span className="text-lg">✳</span></div>
                 <h3 className="mt-4 text-sm font-semibold">AI Assistant</h3>
                 <p className="mt-2 text-xs leading-6 text-zinc-500">Ask questions, research topics, draft content and think through ideas with Nexus AI.</p>
               </article>
