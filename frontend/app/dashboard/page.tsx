@@ -970,6 +970,7 @@ export default function DashboardPage() {
           <button onClick={startNewConversation} className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-white/10 px-4 py-3 text-left text-sm text-zinc-300 hover:bg-white/5">＋ New conversation</button>
           <p className="mt-8 px-3 text-xs font-medium uppercase tracking-[0.18em] text-zinc-600">Workspace</p>
           <div className="mt-3 space-y-1">
+              <Link href="/dashboard/conversations" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">Conversation history</Link>
             <button onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-200">AI Assistant</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Documents</button>
             <button type="button" onClick={() => setMobileMenuOpen(false)} className="w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-500 hover:bg-white/5">Automations</button>
