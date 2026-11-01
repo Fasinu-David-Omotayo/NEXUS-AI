@@ -94,6 +94,19 @@ export default function DashboardPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [deviceConnection, setDeviceConnection] = useState<"checking" | "connected" | "not-connected" | "unavailable">("checking");
+  const [exploredWorkspace, setExploredWorkspace] = useState(false);
+
+  const finishOnboarding = useCallback(() => {
+    if (userEmail) {
+      window.localStorage.setItem(`nexus-onboarding-complete:${userEmail}`, "true");
+    }
+    setOnboardingOpen(false);
+  }, [userEmail]);
+
+  const openOnboarding = () => setOnboardingOpen(true);
+
   const [voiceAssistantEnabled, setVoiceAssistantEnabled] =
     useState(false);
 
@@ -143,7 +156,40 @@ export default function DashboardPage() {
         return;
       }
 
-      setUserEmail(session.user.email ?? "");
+      const email = session.user.email ?? "";
+      setUserEmail(email);
+      setOnboardingOpen(
+        window.localStorage.getItem(`nexus-onboarding-complete:${email}`) !== "true"
+      );
+
+      const apiBaseUrl =
+        process.env.NEXT_PUBLIC_NEXUS_API_URL?.replace(/\/$/, "") ||
+        "http://127.0.0.1:8000";
+
+      try {
+        const deviceResponse = await fetch(`${apiBaseUrl}/v2/desktop/devices`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (deviceResponse.ok) {
+          const deviceData = await deviceResponse.json();
+          const activeDevices = Array.isArray(deviceData.devices)
+            ? deviceData.devices.filter((device: { status?: string }) =>
+                device.status === "online" || device.status === "offline"
+              )
+            : [];
+          setDeviceConnection(
+            activeDevices.some((device: { status?: string }) => device.status === "online")
+              ? "connected"
+              : "not-connected"
+          );
+        } else {
+          setDeviceConnection("unavailable");
+        }
+      } catch {
+        setDeviceConnection("unavailable");
+      }
+
       setCheckingSession(false);
     };
 
@@ -806,6 +852,93 @@ export default function DashboardPage() {
 
   return (
     <main className="relative flex h-[100dvh] min-h-0 overflow-hidden bg-[#090909] text-white">
+      {onboardingOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto bg-black/80 px-4 py-8 backdrop-blur-md">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="onboarding-title"
+            className="my-auto w-full max-w-3xl rounded-3xl border border-white/10 bg-[#11120f] p-6 shadow-2xl shadow-black/50 sm:p-9"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e4e5da] text-[#151612]">
+                  <NexusMark className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">Nexus AI</p>
+                  <p className="text-xs text-zinc-500">Your workspace setup</p>
+                </div>
+              </div>
+              <button type="button" onClick={finishOnboarding} className="rounded-lg px-3 py-2 text-sm text-zinc-500 transition hover:bg-white/5 hover:text-white">
+                Skip for now
+              </button>
+            </div>
+
+            <p className="mt-9 text-xs font-medium uppercase tracking-[0.2em] text-[#a9b99b]">Welcome aboard</p>
+            <h2 id="onboarding-title" className="mt-3 max-w-2xl text-3xl font-medium tracking-[-0.05em] sm:text-4xl">
+              Your ideas, work and computer — in one place.
+            </h2>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-zinc-400">
+              Start with a conversation, connect your Windows companion when you are ready, and explore the tools that make up your Nexus workspace.
+            </p>
+
+            <div className="mt-8 grid gap-3 md:grid-cols-3">
+              <article className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#b8c9a8]/10 text-[#c6d4b8]"><span className="text-lg">✳</span></div>
+                <h3 className="mt-4 text-sm font-semibold">AI Assistant</h3>
+                <p className="mt-2 text-xs leading-6 text-zinc-500">Ask questions, research topics, draft content and think through ideas with Nexus AI.</p>
+              </article>
+              <article className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-400/10 text-blue-200">⌘</div>
+                <h3 className="mt-4 text-sm font-semibold">Local Agent</h3>
+                <p className="mt-2 text-xs leading-6 text-zinc-500">Pair your Windows companion to let Nexus carry out supported actions on your computer.</p>
+              </article>
+              <article className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-300/10 text-amber-200">↗</div>
+                <h3 className="mt-4 text-sm font-semibold">Automation Hub</h3>
+                <p className="mt-2 text-xs leading-6 text-zinc-500">A home for creating and managing repeatable workflows as automation features grow.</p>
+              </article>
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Your getting-started checklist</h3>
+                <span className="text-xs text-zinc-600">You can return to this guide anytime</span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="flex items-center gap-3 text-sm text-zinc-300">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-400/10 text-xs text-emerald-300">✓</span>
+                  Account signed in
+                </div>
+                <div className="flex items-center gap-3 text-sm text-zinc-300">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${messages.length ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-zinc-500"}`}>{messages.length ? "✓" : "2"}</span>
+                  Send your first message
+                </div>
+                <Link href="/dashboard/devices" onClick={finishOnboarding} className="flex items-center gap-3 text-sm text-zinc-300 transition hover:text-white">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${deviceConnection === "connected" ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-zinc-500"}`}>{deviceConnection === "connected" ? "✓" : "3"}</span>
+                  {deviceConnection === "connected" ? "Windows computer connected" : "Connect a Windows computer"}
+                </Link>
+                <button type="button" onClick={() => setExploredWorkspace(true)} className="flex items-center gap-3 text-left text-sm text-zinc-300 transition hover:text-white">
+                  <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${exploredWorkspace ? "bg-emerald-400/10 text-emerald-300" : "bg-white/5 text-zinc-500"}`}>{exploredWorkspace ? "✓" : "4"}</span>
+                  Explore your workspace
+                </button>
+              </div>
+              <p className="mt-4 text-xs text-zinc-600">
+                {deviceConnection === "checking" ? "Checking your desktop connection…" : deviceConnection === "connected" ? "Your Windows companion is online." : deviceConnection === "not-connected" ? "No online Windows companion found yet. You can pair one whenever you are ready." : "Device status is currently unavailable. You can check it from Desktop devices."}
+              </p>
+            </div>
+
+            <div className="mt-7 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <Link href="/download" onClick={finishOnboarding} className="text-center text-sm text-zinc-400 transition hover:text-white">Download the Windows companion</Link>
+              <button type="button" onClick={finishOnboarding} className="rounded-xl bg-[#e4e5da] px-6 py-3 text-sm font-semibold text-[#171813] transition hover:bg-white">
+                Start using Nexus AI <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {/* MOBILE NAVIGATION OVERLAY */}
       {mobileMenuOpen && (
         <button
@@ -956,6 +1089,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex max-w-[52%] items-center gap-2">
+            <button type="button" onClick={openOnboarding} className="hidden rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white sm:block">Setup guide</button>
             <div
               className={`h-2 w-2 rounded-full ${
                 voiceAssistantEnabled
