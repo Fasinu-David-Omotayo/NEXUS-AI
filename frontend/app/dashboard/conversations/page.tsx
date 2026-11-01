@@ -111,6 +111,7 @@ export default function ConversationsPage() {
                 <p className="mt-1 text-xs text-zinc-600">Updated {new Date(item.updated_at).toLocaleString()}</p>
               </div>
               <div className="flex items-center gap-2">
+                <Link href={`/dashboard?conversation=${item.id}`} className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 hover:bg-white/5">Open</Link>
                 {editingId === item.id ? <>
                   <button onClick={() => void saveTitle(item.id)} className="rounded-lg bg-white px-3 py-2 text-xs font-medium text-black">Save</button>
                   <button onClick={() => setEditingId(null)} className="rounded-lg px-3 py-2 text-xs text-zinc-400 hover:bg-white/5">Cancel</button>
