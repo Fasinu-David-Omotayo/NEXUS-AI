@@ -388,22 +388,26 @@ export default function DashboardPage() {
       // Do not clear wakeActive here: it represents the ongoing conversation session.
 
       let conversationId: string | null = null;
-      try { conversationId = await getOrCreateConversation(cleanedInput); }
-      catch (conversationError) { console.error("Could not start saved conversation:", conversationError); }
-
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
         content: cleanedInput,
       };
 
-      setMessages((current) => [
-        ...current,
-        userMessage,
-      ]);
-      if (conversationId) await saveConversationMessage(conversationId, userMessage);
-
+      setMessages((current) => [...current, userMessage]);
       setInput("");
+
+      // Start persistence in parallel with the AI request; database latency
+      // must not delay the first response token.
+      const conversationSetup = getOrCreateConversation(cleanedInput)
+        .then((id) => {
+          conversationId = id;
+          return id;
+        })
+        .catch((conversationError) => {
+          console.error("Could not start saved conversation:", conversationError);
+          return null;
+        });
 
       loadingRef.current = true;
       setLoading(true);
@@ -475,7 +479,13 @@ export default function DashboardPage() {
           };
 
           setMessages((current) => [...current, assistantMessage]);
-          if (conversationId) await saveConversationMessage(conversationId, assistantMessage);
+          conversationId = await conversationSetup;
+          if (conversationId) {
+            await Promise.all([
+              saveConversationMessage(conversationId, userMessage),
+              saveConversationMessage(conversationId, assistantMessage),
+            ]);
+          }
           loadingRef.current = false;
           setLoading(false);
 
@@ -487,41 +497,55 @@ export default function DashboardPage() {
           return;
         }
 
-        // Not a desktop command: use the existing Gemini chat backend unchanged.
-        const response = await fetch(
-          `${apiBaseUrl}/chat`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message: cleanedInput,
-            }),
-          }
-        );
+        // Stream tokens as they arrive instead of waiting for the complete answer.
+        const response = await fetch(`${apiBaseUrl}/chat/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: cleanedInput }),
+          signal: AbortSignal.timeout(120000),
+        });
 
-        if (!response.ok) {
-          throw new Error(
-            "The Nexus AI backend returned an error."
-          );
+        if (!response.ok || !response.body) {
+          throw new Error("The Nexus AI backend returned an error.");
         }
 
-        const data = await response.json();
-
-        const assistantMessage: Message = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content:
-            data.reply ||
-            "I could not generate a response.",
-        };
-
+        const assistantMessageId = crypto.randomUUID();
+        let streamedReply = "";
         setMessages((current) => [
           ...current,
-          assistantMessage,
+          { id: assistantMessageId, role: "assistant", content: "" },
         ]);
-        if (conversationId) await saveConversationMessage(conversationId, assistantMessage);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          streamedReply += decoder.decode(value, { stream: true });
+          const currentReply = streamedReply;
+          setMessages((current) => current.map((item) =>
+            item.id === assistantMessageId ? { ...item, content: currentReply } : item
+          ));
+        }
+        streamedReply += decoder.decode();
+
+        if (!streamedReply.trim()) {
+          throw new Error("Nexus AI returned an empty response.");
+        }
+
+        const assistantMessage: Message = {
+          id: assistantMessageId,
+          role: "assistant",
+          content: streamedReply,
+        };
+
+        conversationId = await conversationSetup;
+        if (conversationId) {
+          await Promise.all([
+            saveConversationMessage(conversationId, userMessage),
+            saveConversationMessage(conversationId, assistantMessage),
+          ]);
+        }
 
         loadingRef.current = false;
         setLoading(false);
@@ -550,11 +574,14 @@ export default function DashboardPage() {
             "I could not connect to the Nexus AI backend. Make sure the Python server is running.",
         };
 
-        setMessages((current) => [
-          ...current,
-          errorMessage,
-        ]);
-        if (conversationId) await saveConversationMessage(conversationId, errorMessage);
+        setMessages((current) => [...current, errorMessage]);
+        conversationId = await conversationSetup;
+        if (conversationId) {
+          await Promise.all([
+            saveConversationMessage(conversationId, userMessage),
+            saveConversationMessage(conversationId, errorMessage),
+          ]);
+        }
 
         loadingRef.current = false;
         setLoading(false);
