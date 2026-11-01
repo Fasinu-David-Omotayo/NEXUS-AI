@@ -89,6 +89,9 @@ export default function DashboardPage() {
 
   const [userEmail, setUserEmail] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -154,6 +157,20 @@ export default function DashboardPage() {
       if (!session) {
         router.replace("/login");
         return;
+      }
+
+      userIdRef.current = session.user.id;
+      const requestedConversationId = new URLSearchParams(window.location.search).get("conversation");
+      if (requestedConversationId) {
+        const { data: conversation, error: conversationError } = await supabase.from("conversations").select("id").eq("id", requestedConversationId).eq("user_id", session.user.id).maybeSingle();
+        if (!conversationError && conversation) {
+          const { data: savedMessages, error: messagesError } = await supabase.from("conversation_messages").select("id,role,content").eq("conversation_id", conversation.id).eq("user_id", session.user.id).order("created_at", { ascending: true });
+          if (!messagesError) {
+            activeConversationIdRef.current = conversation.id;
+            setActiveConversationId(conversation.id);
+            setMessages((savedMessages ?? []) as Message[]);
+          }
+        }
       }
 
       const email = session.user.email ?? "";
@@ -320,6 +337,26 @@ export default function DashboardPage() {
   );
 
 
+  const getOrCreateConversation = useCallback(async (firstMessage: string) => {
+    if (activeConversationIdRef.current) return activeConversationIdRef.current;
+    const userId = userIdRef.current;
+    if (!userId) throw new Error("Your Nexus AI session has expired. Please sign in again.");
+    const title = firstMessage.replace(/\\s+/g, " ").trim().slice(0, 60) || "New conversation";
+    const { data, error } = await supabase.from("conversations").insert({ user_id: userId, title }).select("id").single();
+    if (error || !data) throw error ?? new Error("Could not create conversation.");
+    activeConversationIdRef.current = data.id;
+    setActiveConversationId(data.id);
+    window.history.replaceState({}, "", `/dashboard?conversation=${data.id}`);
+    return data.id;
+  }, []);
+
+  const saveConversationMessage = useCallback(async (conversationId: string, message: Message) => {
+    const userId = userIdRef.current;
+    if (!userId) return;
+    const { error } = await supabase.from("conversation_messages").insert({ conversation_id: conversationId, user_id: userId, role: message.role, content: message.content });
+    if (error) console.error("Could not save Nexus conversation message:", error);
+  }, []);
+
   /*
    * Send a message to FastAPI.
    *
@@ -350,6 +387,10 @@ export default function DashboardPage() {
       resetTranscript();
       // Do not clear wakeActive here: it represents the ongoing conversation session.
 
+      let conversationId: string | null = null;
+      try { conversationId = await getOrCreateConversation(cleanedInput); }
+      catch (conversationError) { console.error("Could not start saved conversation:", conversationError); }
+
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -360,6 +401,7 @@ export default function DashboardPage() {
         ...current,
         userMessage,
       ]);
+      if (conversationId) await saveConversationMessage(conversationId, userMessage);
 
       setInput("");
 
@@ -433,6 +475,7 @@ export default function DashboardPage() {
           };
 
           setMessages((current) => [...current, assistantMessage]);
+          if (conversationId) await saveConversationMessage(conversationId, assistantMessage);
           loadingRef.current = false;
           setLoading(false);
 
@@ -478,6 +521,7 @@ export default function DashboardPage() {
           ...current,
           assistantMessage,
         ]);
+        if (conversationId) await saveConversationMessage(conversationId, assistantMessage);
 
         loadingRef.current = false;
         setLoading(false);
@@ -510,6 +554,7 @@ export default function DashboardPage() {
           ...current,
           errorMessage,
         ]);
+        if (conversationId) await saveConversationMessage(conversationId, errorMessage);
 
         loadingRef.current = false;
         setLoading(false);
@@ -525,6 +570,8 @@ export default function DashboardPage() {
       resetTranscript,
       speakResponse,
       startContinuousListening,
+      getOrCreateConversation,
+      saveConversationMessage,
     ]
   );
 
@@ -805,6 +852,9 @@ export default function DashboardPage() {
 
   const startNewConversation = () => {
     setMobileMenuOpen(false);
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    window.history.replaceState({}, "", "/dashboard");
     setMessages([]);
     setInput("");
 
@@ -1025,6 +1075,7 @@ export default function DashboardPage() {
             </p>
 
             <div className="mt-3 space-y-1">
+              <Link href="/dashboard/conversations" className="block w-full rounded-xl px-3 py-3 text-left text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white">Conversation history</Link>
               <button className="w-full rounded-xl bg-white/5 px-3 py-3 text-left text-sm text-zinc-300">
                 AI Assistant
               </button>
