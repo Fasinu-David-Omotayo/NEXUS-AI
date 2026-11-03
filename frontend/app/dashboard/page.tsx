@@ -15,6 +15,7 @@ import SpeechRecognition, {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import VoiceOrb from "@/components/VoiceOrb";
 
 type Message = {
   id: string;
@@ -926,6 +927,22 @@ export default function DashboardPage() {
 
     return "Starting microphone";
   })();
+
+  if (voiceAssistantEnabled) {
+    return (
+      <VoiceOrb
+        status={voiceStatus}
+        isSpeaking={isSpeaking}
+        listening={listening}
+        transcript={interimTranscript || transcript}
+        input={input}
+        onInputChange={setInput}
+        onSubmit={sendMessage}
+        onExit={toggleVoiceAssistant}
+        disabled={loading}
+      />
+    );
+  }
 
   return (
     <main className="relative flex h-[100dvh] min-h-0 overflow-hidden bg-[#090909] text-white">
