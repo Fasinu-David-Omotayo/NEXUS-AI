@@ -15,11 +15,15 @@ type VoiceOrbProps = {
 };
 
 type Particle = {
-  latitude: number;
-  longitude: number;
+  x: number;
+  y: number;
+  z: number;
   size: number;
-  phase: number;
+  speed: number;
+  alpha: number;
 };
+
+const PARTICLE_COUNT = 520;
 
 export default function VoiceOrb({
   status,
@@ -36,190 +40,187 @@ export default function VoiceOrb({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
+    const ctx = canvas?.getContext("2d", { alpha: true });
+    if (!canvas || !ctx) return;
 
-    let frame = 0;
-    let animationFrame = 0;
+    let raf = 0;
     let width = 0;
     let height = 0;
-    let pixelRatio = 1;
-
-    const particles: Particle[] = Array.from({ length: 330 }, (_, index) => ({
-      latitude: Math.acos(1 - 2 * ((index + 0.5) / 330)),
-      longitude: Math.PI * (1 + Math.sqrt(5)) * index,
-      size: 0.45 + Math.random() * 1.25,
-      phase: Math.random() * Math.PI * 2,
-    }));
+    let angle = 0;
+    let disposed = false;
+    const particles: Particle[] = Array.from({ length: PARTICLE_COUNT }, () => {
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      return {
+        x: Math.sin(phi) * Math.cos(theta),
+        y: Math.cos(phi),
+        z: Math.sin(phi) * Math.sin(theta),
+        size: 0.55 + Math.random() * 1.25,
+        speed: 0.72 + Math.random() * 0.8,
+        alpha: 0.35 + Math.random() * 0.65,
+      };
+    });
 
     const resize = () => {
-      const bounds = canvas.getBoundingClientRect();
-      width = bounds.width;
-      height = bounds.height;
-      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.round(width * pixelRatio);
-      canvas.height = Math.round(height * pixelRatio);
-      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = rect.width;
+      height = rect.height;
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
     const draw = () => {
-      frame += isSpeaking ? 0.014 : 0.006;
-      context.clearRect(0, 0, width, height);
+      if (disposed) return;
+      ctx.clearRect(0, 0, width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+      const radius = Math.min(width * 0.205, height * 0.36, 142);
+      const energy = isSpeaking ? 1 : listening ? 0.78 : 0.55;
+      angle += isSpeaking ? 0.009 : 0.004;
 
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(width * 0.235, height * 0.31, 150);
-      const energy = isSpeaking ? 1 : listening ? 0.72 : 0.48;
-      const pulse = 1 + Math.sin(frame * (isSpeaking ? 2.8 : 1.5)) * (isSpeaking ? 0.035 : 0.015);
+      // The original Jarvis reference uses a layered organic blue energy field.
+      const glow = ctx.createRadialGradient(cx, cy, radius * 0.75, cx, cy, radius * 2.05);
+      glow.addColorStop(0, "rgba(0,0,255,0)");
+      glow.addColorStop(0.38, `rgba(0,0,255,${0.16 * energy})`);
+      glow.addColorStop(0.66, `rgba(0,0,255,${0.25 * energy})`);
+      glow.addColorStop(0.83, `rgba(14,0,255,${0.13 * energy})`);
+      glow.addColorStop(1, "rgba(0,0,120,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 2.05, 0, Math.PI * 2);
+      ctx.fill();
 
-      const atmosphere = context.createRadialGradient(centerX, centerY, radius * 0.55, centerX, centerY, radius * 2.05);
-      atmosphere.addColorStop(0, "rgba(0, 18, 255, 0.02)");
-      atmosphere.addColorStop(0.48, `rgba(0, 24, 255, ${0.13 * energy})`);
-      atmosphere.addColorStop(0.72, `rgba(0, 0, 255, ${0.22 * energy})`);
-      atmosphere.addColorStop(1, "rgba(0, 0, 120, 0)");
-      context.fillStyle = atmosphere;
-      context.beginPath();
-      context.arc(centerX, centerY, radius * 2.1 * pulse, 0, Math.PI * 2);
-      context.fill();
+      // Dark core keeps the particle globe legible against the blue aura.
+      ctx.save();
+      ctx.shadowColor = "#1200ff";
+      ctx.shadowBlur = isSpeaking ? 42 : 28;
+      ctx.fillStyle = "#010208";
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 0.98, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
 
-      // Three luminous orbital field lines around the sphere.
-      for (let ring = 0; ring < 3; ring += 1) {
-        context.save();
-        context.translate(centerX, centerY);
-        context.rotate((-0.22 + ring * 0.21) + frame * (ring % 2 ? -0.035 : 0.025));
-        context.beginPath();
-        context.ellipse(0, 0, radius * (1.48 + ring * 0.12), radius * (0.49 + ring * 0.055), 0, 0, Math.PI * 2);
-        context.strokeStyle = `rgba(26, 45, 255, ${0.22 - ring * 0.045})`;
-        context.lineWidth = ring === 0 ? 2.2 : 1.1;
-        context.shadowColor = "#142cff";
-        context.shadowBlur = 18;
-        context.stroke();
-        context.restore();
+      // Project a rotating 3D particle sphere, with depth-based brightness.
+      const projected: { x: number; y: number; z: number; size: number; alpha: number }[] = [];
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      for (const p of particles) {
+        const x = p.x * cos - p.z * sin;
+        const z = p.x * sin + p.z * cos;
+        const perspective = 0.76 + (z + 1) * 0.12;
+        projected.push({
+          x: cx + x * radius * 0.88,
+          y: cy + p.y * radius * 0.88,
+          z,
+          size: p.size * perspective,
+          alpha: p.alpha * (0.18 + (z + 1) * 0.39) * energy,
+        });
       }
-
-      // Sphere body and its electric-blue rim.
-      const sphereGradient = context.createRadialGradient(
-        centerX - radius * 0.34,
-        centerY - radius * 0.38,
-        radius * 0.04,
-        centerX,
-        centerY,
-        radius * 1.08
-      );
-      sphereGradient.addColorStop(0, "#020817");
-      sphereGradient.addColorStop(0.68, "#01030d");
-      sphereGradient.addColorStop(0.91, "#02051c");
-      sphereGradient.addColorStop(1, "#071bff");
-      context.save();
-      context.shadowColor = "#071dff";
-      context.shadowBlur = isSpeaking ? 46 : 32;
-      context.fillStyle = sphereGradient;
-      context.beginPath();
-      context.arc(centerX, centerY, radius * pulse, 0, Math.PI * 2);
-      context.fill();
-      context.restore();
-
-      // Dense particles rotate over the visible surface of the globe.
-      context.save();
-      context.beginPath();
-      context.arc(centerX, centerY, radius * 0.985, 0, Math.PI * 2);
-      context.clip();
-      for (const particle of particles) {
-        const longitude = particle.longitude + frame * (isSpeaking ? 0.48 : 0.2);
-        const latitude = particle.latitude;
-        const x3 = Math.sin(latitude) * Math.cos(longitude);
-        const y3 = Math.cos(latitude);
-        const z3 = Math.sin(latitude) * Math.sin(longitude);
-        const perspective = 0.72 + (z3 + 1) * 0.16;
-        const x = centerX + x3 * radius * 0.91;
-        const y = centerY + y3 * radius * 0.91;
-        const alpha = Math.max(0.08, (z3 + 1) * 0.44) * energy;
-        context.beginPath();
-        context.fillStyle = `rgba(${isSpeaking ? "35, 112, 255" : "24, 91, 255"}, ${alpha})`;
-        context.shadowColor = "#075bff";
-        context.shadowBlur = 5;
-        context.arc(x, y, particle.size * perspective, 0, Math.PI * 2);
-        context.fill();
+      projected.sort((a, b) => a.z - b.z);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * 0.97, 0, Math.PI * 2);
+      ctx.clip();
+      for (const p of projected) {
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(0, ${isSpeaking ? 105 : 83}, 255, ${p.alpha})`;
+        ctx.shadowColor = "#004dff";
+        ctx.shadowBlur = p.z > 0 ? 7 : 2;
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
       }
-      context.restore();
+      ctx.restore();
 
-      // Small satellites travel around the outside of the globe.
-      for (let index = 0; index < 14; index += 1) {
-        const angle = frame * (index % 2 ? -0.7 : 0.55) + (Math.PI * 2 * index) / 14;
-        const orbitX = Math.cos(angle) * radius * 1.47;
-        const orbitY = Math.sin(angle) * radius * 0.52;
-        const alpha = 0.3 + (Math.sin(angle * 2) + 1) * 0.32;
-        context.beginPath();
-        context.fillStyle = `rgba(54, 116, 255, ${alpha})`;
-        context.shadowColor = "#1745ff";
-        context.shadowBlur = 12;
-        context.arc(centerX + orbitX, centerY + orbitY, index % 3 === 0 ? 2.2 : 1.2, 0, Math.PI * 2);
-        context.fill();
+      // Fine rotating orbit points create movement around the energy field.
+      ctx.save();
+      for (let i = 0; i < 28; i += 1) {
+        const t = angle * (i % 2 ? -2.1 : 1.7) + (i / 28) * Math.PI * 2;
+        const orbitX = Math.cos(t) * radius * 1.48;
+        const orbitY = Math.sin(t) * radius * 0.49;
+        const alpha = 0.14 + (Math.sin(t * 1.8) + 1) * 0.22;
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(35,75,255,${alpha * energy})`;
+        ctx.shadowColor = "#1700ff";
+        ctx.shadowBlur = 9;
+        ctx.arc(cx + orbitX, cy + orbitY, i % 4 === 0 ? 1.8 : 0.9, 0, Math.PI * 2);
+        ctx.fill();
       }
+      ctx.restore();
 
-      context.restore();
-      animationFrame = window.requestAnimationFrame(draw);
+      raf = window.requestAnimationFrame(draw);
     };
 
     resize();
     const observer = new ResizeObserver(resize);
     observer.observe(canvas);
-    animationFrame = window.requestAnimationFrame(draw);
-
+    raf = window.requestAnimationFrame(draw);
     return () => {
-      window.cancelAnimationFrame(animationFrame);
+      disposed = true;
+      window.cancelAnimationFrame(raf);
       observer.disconnect();
     };
   }, [isSpeaking, listening]);
 
   return (
-    <main className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-black text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_34%,rgba(0,14,110,0.18),transparent_48%)]" />
-      <header className="relative z-10 flex h-12 shrink-0 items-center justify-between border-b border-white/[0.06] px-5">
-        <div className="flex items-center gap-2 text-sm font-medium tracking-wide">
-          <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_12px_#1745ff]" />
-          Nexus AI
-        </div>
-        <button type="button" onClick={onExit} className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-400 transition hover:border-white/25 hover:text-white">
-          Exit microphone mode
-        </button>
+    <main className="nexus-voice-screen">
+      <style jsx global>{`
+        .nexus-voice-screen{position:relative;display:flex;min-height:100dvh;flex-direction:column;overflow:hidden;background:#000;color:#fff}
+        .nexus-voice-screen:before{position:absolute;inset:0;content:"";pointer-events:none;background:radial-gradient(ellipse at 50% 42%,rgba(0,0,75,.18),transparent 48%)}
+        .nexus-voice-header{position:relative;z-index:3;display:flex;height:38px;align-items:center;justify-content:space-between;padding:0 16px;border-bottom:1px solid rgba(255,255,255,.08);background:#080808;color:#a5a5a5;font-size:11px}
+        .nexus-voice-stage{position:relative;display:flex;flex:1;min-height:0;flex-direction:column;align-items:center;justify-content:center;padding:0 16px 20px}
+        .nexus-voice-visual{position:relative;display:flex;width:min(390px,82vw);height:min(390px,54vh);align-items:center;justify-content:center}
+        .nexus-voice-visual canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2}
+        .nexus-voice-blob{position:absolute;inset:5%;border-radius:38% 62% 63% 37% / 41% 44% 56% 59%;background:radial-gradient(ellipse at center,transparent 48%,rgba(0,13,255,.18) 68%,rgba(0,13,255,.05) 100%);box-shadow:0 0 50px #1900ff,inset 0 0 50px #1900ff;animation:nexus-blob-one 6s linear infinite;transition:filter .3s}
+        .nexus-voice-blob:nth-child(2){animation:nexus-blob-two 4s linear infinite;inset:3%;opacity:.85}
+        .nexus-voice-blob:nth-child(3){animation:nexus-blob-three 8s linear infinite;inset:7%;opacity:.72}
+        .nexus-voice-visual[data-speaking="true"] .nexus-voice-blob{filter:brightness(1.5);box-shadow:0 0 65px #1900ff,inset 0 0 65px #1900ff}
+        @keyframes nexus-blob-one{to{transform:rotate(360deg)}}
+        @keyframes nexus-blob-two{to{transform:rotate(-360deg)}}
+        @keyframes nexus-blob-three{to{transform:rotate(360deg)}}
+        .nexus-voice-prompt{position:relative;z-index:3;margin-top:0;text-align:center}
+        .nexus-voice-input-wrap{position:relative;z-index:3;width:min(100% - 32px,390px);margin:0 auto 22px}
+        .nexus-voice-input{display:flex;align-items:center;gap:8px;border:1px solid #1717a7;border-radius:9px;background:#111;box-shadow:0 0 18px #1900ff;padding:5px 7px 5px 14px}
+        .nexus-voice-input input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#fff;font:12px Arial,sans-serif}
+        .nexus-voice-input button{display:grid;width:31px;height:31px;place-items:center;border:0;border-radius:7px;background:#191919;color:#fff;cursor:pointer}
+        .nexus-voice-input button:disabled{opacity:.4;cursor:not-allowed}
+        @media(max-height:620px){.nexus-voice-visual{height:min(48vh,300px);width:min(300px,75vw)}.nexus-voice-input-wrap{margin-bottom:12px}}
+        @media(prefers-reduced-motion:reduce){.nexus-voice-blob{animation:none!important}}
+      `}</style>
+
+      <header className="nexus-voice-header">
+        <span>Jarvis</span>
+        <button type="button" onClick={onExit} className="text-zinc-500 transition hover:text-white">Exit microphone mode</button>
       </header>
 
-      <section className="relative flex flex-1 flex-col items-center justify-center px-5 pb-5">
-        <div className="relative flex h-[min(62vh,560px)] w-full max-w-[760px] items-center justify-center">
-          <canvas ref={canvasRef} className="h-full w-full" aria-label="Animated blue Nexus AI particle sphere" />
+      <section className="nexus-voice-stage">
+        <div className="nexus-voice-visual" data-speaking={isSpeaking}>
+          <span className="nexus-voice-blob" />
+          <span className="nexus-voice-blob" />
+          <span className="nexus-voice-blob" />
+          <canvas ref={canvasRef} aria-label="Live rotating blue particle sphere" />
         </div>
-        <div className="-mt-2 text-center">
-          <p className="text-sm font-semibold tracking-wide text-white">
+        <div className="nexus-voice-prompt">
+          <p className="text-xs font-semibold tracking-wide text-white">
             {isSpeaking ? "Nexus is speaking" : status}
           </p>
-          <p className="mt-2 min-h-5 max-w-lg text-xs text-zinc-500">
-            {transcript || (isSpeaking ? "I'm speaking. You can listen…" : "Say “Hey Nexus” when you're ready.")}
-          </p>
+          {transcript && <p className="mt-2 max-w-lg text-xs text-zinc-500">{transcript}</p>}
         </div>
       </section>
 
-      <footer className="relative z-10 w-full shrink-0 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-8">
-        <form onSubmit={onSubmit} className="mx-auto w-full max-w-xl">
-          <label htmlFor="nexus-voice-input" className="mb-3 block text-center text-xs font-medium text-zinc-300">
-            Ask me anything
-          </label>
-          <div className="flex items-center gap-2 rounded-2xl border border-blue-900/70 bg-[#080a13] p-2 shadow-[0_0_28px_rgba(0,25,255,0.28)] focus-within:border-blue-600/80">
-            <input
-              id="nexus-voice-input"
-              value={input}
-              onChange={(event) => onInputChange(event.target.value)}
-              placeholder="Type your command here..."
-              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-white outline-none placeholder:text-zinc-600"
-            />
-            <button type="button" onClick={onExit} aria-label="Turn microphone mode off" className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-blue-300 transition hover:bg-white/10">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8"/></svg>
+      <footer className="nexus-voice-input-wrap">
+        <form onSubmit={onSubmit}>
+          <label htmlFor="nexus-voice-input" className="mb-3 block text-center text-xs font-semibold text-white">Ask me anything</label>
+          <div className="nexus-voice-input">
+            <input id="nexus-voice-input" value={input} onChange={(event) => onInputChange(event.target.value)} placeholder="Type your command here..." />
+            <button type="button" onClick={onExit} aria-label="Exit microphone mode" title="Microphone mode on">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8"/></svg>
             </button>
-            <button type="submit" disabled={!input.trim() || disabled} aria-label="Send command" className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white transition hover:bg-blue-500 disabled:opacity-35">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+            <button type="submit" disabled={!input.trim() || disabled} aria-label="Send message">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
             </button>
           </div>
-          <p className="mt-3 text-center text-[10px] text-zinc-700">Microphone mode · Nexus AI</p>
         </form>
       </footer>
     </main>
