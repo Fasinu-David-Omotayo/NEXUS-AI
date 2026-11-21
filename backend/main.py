@@ -1,29 +1,24 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
-import google.generativeai as genai
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+from google import genai
 
 load_dotenv()
 
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip() or "gemini-3.8-flash"
+
 API_KEYS = [
-    os.getenv("GEMINI_API_KEY_1"),
-    os.getenv("GEMINI_API_KEY_2"),
-    os.getenv("GEMINI_API_KEY_3"),
-    os.getenv("GEMINI_API_KEY_4"),
-    os.getenv("GEMINI_API_KEY_5"),
+    os.getenv(f"GEMINI_API_KEY_{index}", "").strip()
+    for index in range(1, 6)
 ]
 API_KEYS = [key for key in API_KEYS if key]
-
-if not API_KEYS:
-    raise RuntimeError(
-        "No Gemini API keys were found. Check your backend environment."
-    )
 
 default_origins = [
     "http://localhost:3000",
@@ -37,7 +32,7 @@ configured = [
 ]
 ALLOWED_ORIGINS = list(dict.fromkeys(default_origins + configured))
 
-app = FastAPI(title="Nexus AI Backend", version="1.3.0")
+app = FastAPI(title="Nexus AI Backend", version="1.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -52,7 +47,12 @@ class ChatRequest(BaseModel):
 
 
 def generate_with_failover(prompt: str) -> str:
-    last_error = None
+    """Generate a reply using the current Google Gen AI SDK and rotate API keys."""
+    if not API_KEYS:
+        raise RuntimeError(
+            "No Gemini API keys are configured. Add GEMINI_API_KEY_1 in Render."
+        )
+
     system_prompt = f"""
 You are Nexus AI.
 
@@ -70,22 +70,41 @@ When the user asks who you are, identify yourself as Nexus AI.
 User Message:
 {prompt}
 """
+
+    failures: list[str] = []
+
     for index, key in enumerate(API_KEYS, start=1):
+        client: Optional[genai.Client] = None
         try:
-            genai.configure(api_key=key)
-            model = genai.GenerativeModel(MODEL_NAME)
-            response = model.generate_content(system_prompt)
-            if not response.text:
-                raise RuntimeError("The AI provider returned an empty response.")
-            print(f"Gemini API key #{index} succeeded.")
-            return response.text
-        except Exception as error:
-            print(
-                f"Gemini API key #{index} failed: "
-                f"{type(error).__name__}: {error}"
+            client = genai.Client(api_key=key)
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=system_prompt,
             )
-            last_error = error
-    raise RuntimeError("All configured Gemini API keys failed.") from last_error
+            reply = (response.text or "").strip()
+            if not reply:
+                raise RuntimeError("Gemini returned an empty response.")
+
+            print(f"Nexus AI: Gemini API key #{index} succeeded.")
+            return reply
+
+        except Exception as error:
+            message = str(error).replace("\\n", " ")[:500]
+            failures.append(f"key #{index}: {type(error).__name__}: {message}")
+            print(
+                f"Nexus AI: Gemini API key #{index} failed "
+                f"({type(error).__name__}): {message}"
+            )
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+
+    raise RuntimeError(
+        "Every configured Gemini API key failed. " + " | ".join(failures)
+    )
 
 
 @app.get("/")
@@ -97,26 +116,35 @@ async def root():
     }
 
 
+@app.get("/health")
+async def health():
+    return {
+        "status": "ok",
+        "service": "Nexus AI Backend",
+        "model": MODEL_NAME,
+        "gemini_keys_configured": len(API_KEYS),
+    }
+
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     message = request.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Please enter a message.")
+
     try:
-        return {"reply": generate_with_failover(message)}
+        reply = await run_in_threadpool(generate_with_failover, message)
+        return {"reply": reply}
     except Exception as error:
-        print(
-            f"Nexus AI request failed: {type(error).__name__}: {error}"
-        )
+        print(f"Nexus AI request failed: {type(error).__name__}: {error}")
         raise HTTPException(
             status_code=503,
-            detail="Nexus AI is temporarily unavailable. Please try again shortly.",
+            detail="Nexus AI could not get a response from its AI provider. "
+                   "Please try again shortly.",
         ) from error
 
 
-# The previous /desktop/ws, /desktop/status, and /desktop-command endpoints
-# used one shared token and one global agent. They are intentionally removed.
-# New endpoints are account-scoped and live under /v2/desktop.
+# Desktop control remains account-scoped and uses the secure pairing router.
 from secure_desktop import router as secure_desktop_router
 
 app.include_router(secure_desktop_router)
