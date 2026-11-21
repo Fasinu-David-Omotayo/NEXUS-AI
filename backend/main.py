@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -9,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from google import genai
+from google.genai import types
 
 load_dotenv()
 
@@ -19,6 +21,11 @@ API_KEYS = [
     for index in range(1, 6)
 ]
 API_KEYS = [key for key in API_KEYS if key]
+
+# Keep one provider request short. The SDK otherwise retries transient errors
+# automatically, which can make the frontend wait longer than its timeout.
+GEMINI_REQUEST_TIMEOUT_MS = 9000
+MAX_OVERLOAD_ATTEMPTS = 2
 
 default_origins = [
     "http://localhost:3000",
@@ -32,7 +39,7 @@ configured = [
 ]
 ALLOWED_ORIGINS = list(dict.fromkeys(default_origins + configured))
 
-app = FastAPI(title="Nexus AI Backend", version="1.4.0")
+app = FastAPI(title="Nexus AI Backend", version="1.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -46,8 +53,17 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
 
 
+def get_http_status(error: Exception) -> Optional[int]:
+    """Read the HTTP status from Google SDK errors without depending on one class."""
+    code = getattr(error, "code", None)
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def generate_with_failover(prompt: str) -> str:
-    """Generate a reply using the current Google Gen AI SDK and rotate API keys."""
+    """Generate a reply, skipping exhausted keys and limiting overload retries."""
     if not API_KEYS:
         raise RuntimeError(
             "No Gemini API keys are configured. Add GEMINI_API_KEY_1 in Render."
@@ -72,11 +88,26 @@ User Message:
 """
 
     failures: list[str] = []
+    overload_attempts = 0
+    started_at = time.monotonic()
 
     for index, key in enumerate(API_KEYS, start=1):
+        # Do not let several slow provider calls outlive the frontend timeout.
+        if time.monotonic() - started_at >= 20:
+            print("Nexus AI: stopping Gemini failover after the 20-second budget.")
+            break
+
         client: Optional[genai.Client] = None
+        key_started_at = time.monotonic()
+
         try:
-            client = genai.Client(api_key=key)
+            client = genai.Client(
+                api_key=key,
+                http_options=types.HttpOptions(
+                    timeout=GEMINI_REQUEST_TIMEOUT_MS,
+                    retry_options=types.HttpRetryOptions(attempts=1),
+                ),
+            )
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=system_prompt,
@@ -85,16 +116,53 @@ User Message:
             if not reply:
                 raise RuntimeError("Gemini returned an empty response.")
 
-            print(f"Nexus AI: Gemini API key #{index} succeeded.")
+            elapsed = time.monotonic() - key_started_at
+            print(
+                f"Nexus AI: Gemini API key #{index} succeeded "
+                f"in {elapsed:.2f}s."
+            )
             return reply
 
         except Exception as error:
+            status = get_http_status(error)
             message = str(error).replace("\\n", " ")[:500]
             failures.append(f"key #{index}: {type(error).__name__}: {message}")
+            elapsed = time.monotonic() - key_started_at
+
             print(
-                f"Nexus AI: Gemini API key #{index} failed "
-                f"({type(error).__name__}): {message}"
+                f"Nexus AI: Gemini API key #{index} failed after {elapsed:.2f}s "
+                f"(HTTP {status or 'unknown'}, {type(error).__name__}): {message}"
             )
+
+            # A daily/free-tier quota belongs to that key's project. Skip it
+            # immediately and check the next configured key.
+            if status == 429:
+                print(f"Nexus AI: skipping exhausted Gemini API key #{index}.")
+                continue
+
+            # 503 means the model service is overloaded, not that this key is
+            # invalid. Try at most one other key, then stop rather than looping.
+            if status == 503:
+                overload_attempts += 1
+                if overload_attempts >= MAX_OVERLOAD_ATTEMPTS:
+                    print(
+                        "Nexus AI: Gemini model is still overloaded; "
+                        "stopping further key attempts."
+                    )
+                    break
+                continue
+
+            # Authentication, permission, invalid model, and request errors
+            # generally will not be fixed by trying the same request with
+            # several other API keys.
+            if status in (400, 401, 403, 404):
+                break
+
+            # Unknown/network failures: move to one more key only.
+            overload_attempts += 1
+            if overload_attempts >= MAX_OVERLOAD_ATTEMPTS:
+                break
+
         finally:
             if client is not None:
                 try:
@@ -103,7 +171,8 @@ User Message:
                     pass
 
     raise RuntimeError(
-        "Every configured Gemini API key failed. " + " | ".join(failures)
+        "Gemini could not complete this request. "
+        "Check API quotas and model availability. " + " | ".join(failures)
     )
 
 
@@ -139,8 +208,11 @@ async def chat(request: ChatRequest):
         print(f"Nexus AI request failed: {type(error).__name__}: {error}")
         raise HTTPException(
             status_code=503,
-            detail="Nexus AI could not get a response from its AI provider. "
-                   "Please try again shortly.",
+            detail=(
+                "Nexus AI is temporarily unable to reach its AI provider. "
+                "The free Gemini quota may be exhausted or the model may be busy. "
+                "Please try again shortly."
+            ),
         ) from error
 
 
