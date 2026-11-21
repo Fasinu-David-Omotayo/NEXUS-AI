@@ -24,7 +24,7 @@ API_KEYS = [key for key in API_KEYS if key]
 
 # Keep one provider request short. The SDK otherwise retries transient errors
 # automatically, which can make the frontend wait longer than its timeout.
-GEMINI_REQUEST_TIMEOUT_MS = 9000
+GEMINI_REQUEST_TIMEOUT_MS = 11000
 MAX_OVERLOAD_ATTEMPTS = 2
 
 default_origins = [
@@ -39,7 +39,7 @@ configured = [
 ]
 ALLOWED_ORIGINS = list(dict.fromkeys(default_origins + configured))
 
-app = FastAPI(title="Nexus AI Backend", version="1.5.0")
+app = FastAPI(title="Nexus AI Backend", version="1.5.1")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
