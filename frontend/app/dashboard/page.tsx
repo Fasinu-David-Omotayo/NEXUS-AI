@@ -59,6 +59,73 @@ function looksLikeDesktopCommand(input: string): boolean {
   return new RegExp(prefix + actions, "i").test(normalized);
 }
 
+function getLocalResponse(input: string): string | null {
+  const normalized = input
+    .toLowerCase()
+    .replace(/[^a-z0-9\s']/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!?]+$/g, "");
+
+  const exactMatches: Record<string, string> = {
+    "hi": "Hey there! I'm here and ready to help. What would you like to work on?",
+    "hello": "Hello! Great to hear from you. What can I help you with today?",
+    "hey": "Hey! I'm listening. What can I do for you?",
+    "hey nexus": "Hey! I'm right here. What would you like me to do?",
+    "good morning": "Good morning! I hope you're having a great start to your day. How can I help?",
+    "good afternoon": "Good afternoon! I'm ready when you are. What can I help you with?",
+    "good evening": "Good evening! What can I help you accomplish today?",
+    "good night": "Good night! Take care, and I'll be here whenever you need me.",
+    "how are you": "I'm doing well, thank you for asking! I'm ready to help. How are you doing?",
+    "how are you doing": "I'm doing great and ready to help. What's on your mind?",
+    "how are things": "All systems are ready on my end. What can I help you with?",
+    "who are you": "I'm Nexus AI, your intelligent assistant for learning, research, productivity, and everyday tasks.",
+    "what is your name": "My name is Nexus AI. You can call me Nexus.",
+    "whats your name": "My name is Nexus AI. You can call me Nexus.",
+    "what can you do": "I can answer questions, explain concepts, help with research and writing, organize ideas, and work with your paired Windows desktop companion for supported computer tasks.",
+    "what can you do for me": "I can help with research, learning, writing, planning, problem-solving, and supported tasks on your paired Windows computer. Tell me what you'd like to accomplish.",
+    "how can you help me": "I can help you learn, research, write, plan, solve problems, and use supported desktop commands through your paired Windows companion. What would you like to do?",
+    "thank you": "You're very welcome! I'm glad I could help.",
+    "thanks": "You're welcome! Let me know what else you need.",
+    "thanks nexus": "Anytime! I'm here whenever you need a hand.",
+    "you are welcome": "Absolutely. What else can I help you with?",
+    "goodbye": "Goodbye! Take care, and come back whenever you need me.",
+    "bye": "Bye for now! I'll be here when you need me.",
+    "see you later": "See you later! Have a great day.",
+    "help": "Of course. You can ask me questions, request explanations, get help with research or writing, or give supported commands to your paired Windows desktop companion. What would you like help with?",
+    "what time is it": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
+    "whats the time": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
+    "what is the date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
+    "whats todays date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
+  };
+
+  if (exactMatches[normalized]) {
+    return exactMatches[normalized];
+  }
+
+  if (/^(hi|hello|hey) nexus$/.test(normalized)) {
+    return "Hey! I'm right here. What would you like me to do?";
+  }
+
+  if (/^(how are you|how are you doing|how are you today)$/.test(normalized)) {
+    return "I'm doing well, thank you for asking! I'm ready to help with whatever you have in mind.";
+  }
+
+  if (/^(who are you|tell me about yourself)$/.test(normalized)) {
+    return "I'm Nexus AI, your intelligent assistant for learning, research, productivity, and everyday tasks.";
+  }
+
+  if (/^(what can you do|what can you do for me|how can you help me)$/.test(normalized)) {
+    return "I can help with research, learning, writing, planning, problem-solving, and supported tasks on your paired Windows computer. What would you like to accomplish?";
+  }
+
+  if (/^(thanks|thank you|thanks a lot|thank you so much)$/.test(normalized)) {
+    return "You're very welcome! I'm glad I could help.";
+  }
+
+  return null;
+}
+
 function NexusMark({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -362,6 +429,25 @@ export default function DashboardPage() {
       ]);
 
       setInput("");
+
+      // Handle everyday conversation locally so it never waits for Render or Gemini.
+      const localReply = getLocalResponse(cleanedInput);
+      if (localReply !== null) {
+        const assistantMessage: Message = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: localReply,
+        };
+
+        setMessages((current) => [...current, assistantMessage]);
+
+        if (voiceRequest && voiceEnabledRef.current) {
+          speakResponse(localReply);
+        } else if (voiceEnabledRef.current) {
+          setTimeout(() => startContinuousListening(), 250);
+        }
+        return;
+      }
 
       loadingRef.current = true;
       setLoading(true);
