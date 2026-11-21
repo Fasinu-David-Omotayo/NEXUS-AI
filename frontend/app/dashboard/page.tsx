@@ -556,6 +556,8 @@ export default function DashboardPage() {
             body: JSON.stringify({
               message: cleanedInput,
             }),
+            // Never leave the chat stuck on "thinking" indefinitely.
+            signal: AbortSignal.timeout(25000),
           }
         );
 
@@ -602,9 +604,11 @@ export default function DashboardPage() {
 
         const errorText =
           error instanceof Error ? error.message : String(error);
-        const friendlyError = /failed to fetch|networkerror|load failed/i.test(errorText)
-          ? "I couldn't reach the Nexus AI server. Please try again in a moment."
-          : errorText;
+        const friendlyError = /timeout|timed out|aborterror/i.test(errorText)
+          ? "Nexus AI is taking longer than expected. The free hosting service may be waking up or the AI provider may be slow. Please try once more."
+          : /failed to fetch|networkerror|load failed/i.test(errorText)
+            ? "I couldn't reach the Nexus AI server. Please try again in a moment."
+            : errorText;
 
         const errorMessage: Message = {
           id: crypto.randomUUID(),
