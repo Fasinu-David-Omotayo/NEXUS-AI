@@ -82,6 +82,7 @@ function getLocalResponse(input: string): string | null {
     "who are you": "I'm Nexus AI, your intelligent assistant for learning, research, productivity, and everyday tasks.",
     "what is your name": "My name is Nexus AI. You can call me Nexus.",
     "whats your name": "My name is Nexus AI. You can call me Nexus.",
+    "what's your name": "My name is Nexus AI. You can call me Nexus.",
     "what can you do": "I can answer questions, explain concepts, help with research and writing, organize ideas, and work with your paired Windows desktop companion for supported computer tasks.",
     "what can you do for me": "I can help with research, learning, writing, planning, problem-solving, and supported tasks on your paired Windows computer. Tell me what you'd like to accomplish.",
     "how can you help me": "I can help you learn, research, write, plan, solve problems, and use supported desktop commands through your paired Windows companion. What would you like to do?",
@@ -95,8 +96,10 @@ function getLocalResponse(input: string): string | null {
     "help": "Of course. You can ask me questions, request explanations, get help with research or writing, or give supported commands to your paired Windows desktop companion. What would you like help with?",
     "what time is it": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
     "whats the time": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
+    "what's the time": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
     "what is the date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
     "whats todays date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
+    "what's today's date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
   };
 
   if (exactMatches[normalized]) {
