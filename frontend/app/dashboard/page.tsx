@@ -62,30 +62,44 @@ function looksLikeDesktopCommand(input: string): boolean {
 function getLocalResponse(input: string): string | null {
   const normalized = input
     .toLowerCase()
-    .replace(/[^a-z0-9\s']/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9\\s']/g, " ")
+    .replace(/\\s+/g, " ")
     .trim()
     .replace(/[.!?]+$/g, "");
 
-  const exactMatches: Record<string, string> = {
+  const now = new Date();
+  const time = now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const date = now.toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  const exact: Record<string, string> = {
     "hi": "Hey there! I'm here and ready to help. What would you like to work on?",
     "hello": "Hello! Great to hear from you. What can I help you with today?",
     "hey": "Hey! I'm listening. What can I do for you?",
     "hey nexus": "Hey! I'm right here. What would you like me to do?",
+    "hello nexus": "Hello! I'm right here and ready to help. What's on your mind?",
+    "hi nexus": "Hey! I'm right here. What can I help you with?",
     "good morning": "Good morning! I hope you're having a great start to your day. How can I help?",
     "good afternoon": "Good afternoon! I'm ready when you are. What can I help you with?",
     "good evening": "Good evening! What can I help you accomplish today?",
     "good night": "Good night! Take care, and I'll be here whenever you need me.",
     "how are you": "I'm doing well, thank you for asking! I'm ready to help. How are you doing?",
     "how are you doing": "I'm doing great and ready to help. What's on your mind?",
-    "how are things": "All systems are ready on my end. What can I help you with?",
+    "how are you today": "I'm doing well and ready to help you today. What can we work on?",
+    "how is it going": "Everything is running smoothly on my end. What can I help you with?",
+    "whats up": "Not much—I'm here and ready to help. What's up with you?",
+    "what is up": "Not much—I'm here and ready to help. What can I do for you?",
     "who are you": "I'm Nexus AI, your intelligent assistant for learning, research, productivity, and everyday tasks.",
+    "tell me about yourself": "I'm Nexus AI, an assistant built to help with questions, research, learning, writing, productivity, and supported desktop tasks.",
+    "introduce yourself": "Hello! I'm Nexus AI. I can help you with research, learning, writing, problem-solving, productivity, and supported tasks on your paired computer.",
     "what is your name": "My name is Nexus AI. You can call me Nexus.",
     "whats your name": "My name is Nexus AI. You can call me Nexus.",
     "what's your name": "My name is Nexus AI. You can call me Nexus.",
     "what can you do": "I can answer questions, explain concepts, help with research and writing, organize ideas, and work with your paired Windows desktop companion for supported computer tasks.",
     "what can you do for me": "I can help with research, learning, writing, planning, problem-solving, and supported tasks on your paired Windows computer. Tell me what you'd like to accomplish.",
     "how can you help me": "I can help you learn, research, write, plan, solve problems, and use supported desktop commands through your paired Windows companion. What would you like to do?",
+    "what are your features": "Nexus AI supports conversational assistance, explanations, research and writing help, voice interaction, and supported commands through your paired desktop agent.",
     "thank you": "You're very welcome! I'm glad I could help.",
     "thanks": "You're welcome! Let me know what else you need.",
     "thanks nexus": "Anytime! I'm here whenever you need a hand.",
@@ -94,38 +108,36 @@ function getLocalResponse(input: string): string | null {
     "bye": "Bye for now! I'll be here when you need me.",
     "see you later": "See you later! Have a great day.",
     "help": "Of course. You can ask me questions, request explanations, get help with research or writing, or give supported commands to your paired Windows desktop companion. What would you like help with?",
-    "what time is it": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
-    "whats the time": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
-    "what's the time": "It's " + new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + " on your device.",
-    "what is the date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
-    "whats todays date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
-    "what's today's date": "Today is " + new Date().toLocaleDateString([], { weekday: "long", year: "numeric", month: "long", day: "numeric" }) + ".",
+    "what time is it": "It's " + time + " on your device.",
+    "whats the time": "It's " + time + " on your device.",
+    "what is the date": "Today is " + date + ".",
+    "whats todays date": "Today is " + date + ".",
+    "what's today's date": "Today is " + date + ".",
+    "good morning nexus": "Good morning! Nexus is ready to help. What would you like to do?",
+    "good afternoon nexus": "Good afternoon! Nexus is ready to help. What can I do for you?",
+    "good evening nexus": "Good evening! Nexus is ready to help. What's on your mind?",
   };
 
-  if (exactMatches[normalized]) {
-    return exactMatches[normalized];
-  }
+  if (exact[normalized]) return exact[normalized];
 
-  if (/^(hi|hello|hey) nexus$/.test(normalized)) {
-    return "Hey! I'm right here. What would you like me to do?";
+  if (/^(hi|hello|hey)( there)?( nexus)?$/.test(normalized)) {
+    return "Hey there! I'm Nexus AI, and I'm ready to help. What would you like to do?";
   }
-
-  if (/^(how are you|how are you doing|how are you today)$/.test(normalized)) {
+  if (/^(how are you|how are you doing|how are you today|how have you been)( doing)?( nexus)?$/.test(normalized)) {
     return "I'm doing well, thank you for asking! I'm ready to help with whatever you have in mind.";
   }
-
-  if (/^(who are you|tell me about yourself)$/.test(normalized)) {
+  if (/^(who are you|what are you|tell me who you are|can you introduce yourself)( please)?( nexus)?$/.test(normalized)) {
     return "I'm Nexus AI, your intelligent assistant for learning, research, productivity, and everyday tasks.";
   }
-
-  if (/^(what can you do|what can you do for me|how can you help me)$/.test(normalized)) {
+  if (/^(what can you do|what can you help me with|how can you help|how may you help me)( please)?( nexus)?$/.test(normalized)) {
     return "I can help with research, learning, writing, planning, problem-solving, and supported tasks on your paired Windows computer. What would you like to accomplish?";
   }
-
-  if (/^(thanks|thank you|thanks a lot|thank you so much)$/.test(normalized)) {
+  if (/^(thanks|thank you|thanks a lot|thank you so much)( nexus)?$/.test(normalized)) {
     return "You're very welcome! I'm glad I could help.";
   }
-
+  if (/^(good morning|good afternoon|good evening)( nexus)?$/.test(normalized)) {
+    return greeting + "! I'm here and ready to help. What can I do for you?";
+  }
   return null;
 }
 
@@ -548,9 +560,9 @@ export default function DashboardPage() {
         );
 
         if (!response.ok) {
-          throw new Error(
-            "The Nexus AI backend returned an error."
-          );
+          const errorData = await response.json().catch(() => ({}));
+          const detail = typeof errorData.detail === "string" ? errorData.detail : "";
+          throw new Error(detail || `Nexus backend returned HTTP ${response.status}.`);
         }
 
         const data = await response.json();
@@ -588,11 +600,16 @@ export default function DashboardPage() {
       } catch (error) {
         console.error(error);
 
+        const errorText =
+          error instanceof Error ? error.message : String(error);
+        const friendlyError = /failed to fetch|networkerror|load failed/i.test(errorText)
+          ? "I couldn't reach the Nexus AI server. Please try again in a moment."
+          : errorText;
+
         const errorMessage: Message = {
           id: crypto.randomUUID(),
           role: "assistant",
-          content:
-            "I could not connect to the Nexus AI backend. Make sure the Python server is running.",
+          content: friendlyError,
         };
 
         setMessages((current) => [
